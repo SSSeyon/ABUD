@@ -2,6 +2,8 @@
 // Each alert clears by itself once the condition is resolved (maturity recorded, cash invested, limit met).
 import { addDays, BusinessCalendar, daysBetween, dec, quarterOf, ZERO } from '../engine/index.js';
 import { closedInstrumentIds, expectedMaturityValue, holdingsOn, navSeries, TYPE_LABELS } from './portfolio.js';
+import { benchmarkFor, completedQuarters } from './close.js';
+import { feedHealth, marketEvents } from './market.js';
 
 /** Defaults until Settings > Limits is saved. Money as strings, shares as fractions. */
 export const DEFAULT_LIMITS = Object.freeze({
@@ -105,7 +107,7 @@ export function computeAlerts(data, today, limits = limitsFrom(data)) {
   let bdLeft = 0;
   for (let d = today; d <= q.end; d = addDays(d, 1)) if (cal.isBusinessDay(d)) bdLeft += 1;
   if (bdLeft <= 5) {
-    alerts.push({ key: `qe-${q.label}`, level: 'medium', title: `Quarter end in ${bdLeft} business day${bdLeft === 1 ? '' : 's'}: ${q.label}`, detail: 'Run the fee and incentive test and prepare the quarter statement (Reports).', route: 'reports', sort: q.end });
+    alerts.push({ key: `qe-${q.label}`, level: 'medium', title: `Quarter end in ${bdLeft} business day${bdLeft === 1 ? '' : 's'}: ${q.label}`, detail: 'Check the benchmark, then run the fee and incentive calculation and prepare the statement (Quarter close).', route: 'close', sort: q.end });
   }
 
   // Mandate renewal window: 60 and 45 days before the anniversary (30-day notice).
@@ -117,6 +119,29 @@ export function computeAlerts(data, today, limits = limitsFrom(data)) {
     if (days <= 60) {
       alerts.push({ key: `renewal-${next}`, level: days <= 45 ? 'medium' : 'low', title: `Mandate anniversary in ${days} days (${next})`, detail: `The 30-day notice deadline is ${addDays(next, -30)}.`, route: 'settings', sort: next });
     }
+  }
+
+  // Quarter close and market data (only once those collections have loaded).
+  if (Array.isArray(data.auctions) && (data.transactions ?? []).length && !benchmarkFor(data, q.label)) {
+    alerts.push({ key: `bench-${q.label}`, level: 'high', title: `Benchmark missing for ${q.label}`, detail: `No 91-day NTB auction before ${q.start} is stored, so the hurdle can't be set. Add it on the Market screen.`, route: 'market', sort: q.start });
+  }
+  if (Array.isArray(data.quarterlyResults)) {
+    const inception = (data.transactions ?? []).reduce((m, t) => (!m || t.date < m ? t.date : m), '');
+    const lastQ = completedQuarters(inception, today)[0];
+    if (lastQ && !data.quarterlyResults.some((r) => r.id === lastQ.label)) {
+      alerts.push({ key: `close-${lastQ.label}`, level: 'medium', title: `${lastQ.label} not closed yet`, detail: 'Lock the benchmark, run the fee and incentive calculation and issue the statement (Quarter close).', route: 'close', sort: lastQ.end });
+    }
+  }
+  if (Array.isArray(data.feedStatus)) {
+    const feeds = feedHealth(data, today);
+    if (feeds.every((f) => f.status === 'never')) {
+      alerts.push({ key: 'feeds-never', level: 'low', title: 'Market feeds have not run yet', detail: 'Auction, MPC and CP data come from a scheduled job (see Market). Until it runs, add results by hand.', route: 'market', sort: today });
+    } else {
+      for (const f of feeds.filter((x) => x.status === 'stale' || x.status === 'failing')) {
+        alerts.push({ key: `feed-${f.key}`, level: 'medium', title: `Market feed ${f.status === 'failing' ? 'failing' : 'stale'}: ${f.label}`, detail: f.status === 'failing' ? `Last error: ${f.doc?.lastError ?? 'unknown'}. Add data by hand on the Market screen until it is fixed.` : `Last updated ${f.lastOk}. Check the scheduled job, or add data by hand.`, route: 'market', sort: f.lastOk ?? today });
+      }
+    }
+    for (const e of marketEvents(data, today)) alerts.push({ key: e.key, level: 'low', title: e.title, detail: e.detail, route: 'market', sort: e.date });
   }
 
   const rank = { high: 0, medium: 1, low: 2 };

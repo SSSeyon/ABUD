@@ -323,3 +323,38 @@ dialog.modal::backdrop { background: rgba(16, 17, 20, .45); }
   .ladder-row { grid-template-columns: 100px 1fr 110px; }
   .ladder-cum { display: none; }
 }
+
+/* Quarter close */
+.close-status { padding: 10px 14px; border-radius: var(--radius); margin-bottom: 16px; border: 1px solid var(--border); background: var(--surface); }
+.close-status.closed { border-left: 3px solid var(--ok); }
+.close-status.open { border-left: 3px solid var(--warn); }
+.close-status.preview { border-left: 3px solid var(--slate); }
+.toolbar.actions-row { justify-content: flex-start; gap: 8px; }
+
+/* Client documents (statement, fee computation): letterhead, then plain sections that print on white */
+.document { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 28px 32px; max-width: 900px; position: relative; }
+.document > .toolbar { margin: -8px 0 20px; }
+.document section { margin-bottom: 22px; }
+.document h2 { font-size: 15px; border-bottom: 2px solid var(--brand); padding-bottom: 4px; }
+.doc-head { display: flex; gap: 24px; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 16px; margin-bottom: 20px; }
+.doc-head .wordmark { flex-direction: column; }
+.doc-head .wm-mbo { color: var(--brand); }
+.doc-head h1 { margin: 0 0 4px; font-size: 22px; }
+.doc-head p { margin: 0; color: var(--muted); }
+.doc-ref { font-size: 12px; color: var(--muted); border-top: 1px solid var(--border); padding-top: 10px; margin-top: 24px; }
+.document.draft::before { content: 'DRAFT'; position: absolute; top: 30%; left: 50%; transform: translate(-50%, -50%) rotate(-20deg); font-size: 120px; font-weight: 800; color: var(--brand); opacity: .07; pointer-events: none; }
+@media print {
+  .document { border: 0; padding: 0; max-width: none; }
+  .doc-head .wm-capital { color: #6b6c70; }
+}
+@media (max-width: 640px) {
+  .document { padding: 18px 16px; }
+  .doc-head { flex-direction: column; align-items: flex-start; gap: 10px; }
+}
+
+/* Dashboard: top options */
+.opps { list-style: none; margin: 0; padding: 0; counter-reset: opp; }
+.opps li { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); counter-increment: opp; }
+.opps li:last-child { border-bottom: 0; }
+.opps li > div:first-child::before { content: counter(opp) '. '; color: var(--muted); font-weight: 600; }
+.opps .num { text-align: right; font-variant-numeric: tabular-nums; }

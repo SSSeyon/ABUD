@@ -24,10 +24,18 @@ no withdrawal-instruction verification or signatory register. Do not add them ba
 - Every recorded transaction counts (the engine's `approved` flag is always true from the app).
 
 ## Layout
-- `index.html`, `styles.css` app shell. `src/app/main.js` hash router (#/dashboard, #/alerts, #/holdings, #/ladder, #/transactions, #/reports, #/history, #/settings).
+- `index.html`, `styles.css` app shell. `src/app/main.js` hash router (#/dashboard, #/alerts, #/holdings, #/ladder, #/transactions, #/market, #/reports, #/close, #/history, #/settings).
 - Periods: `src/app/period.js` (QTD, YTD, any quarter, since inception, custom); one shared choice across Dashboard, Reports, History.
 - Alerts: `src/app/alerts.js` computes them live from the data and `settings/limits` (plan thresholds as defaults); in-app only, no email job yet. New deals over the tenor limit are refused.
 - Rollover: Holdings → Roll over writes maturity + new deal + its investment entry as one change (same terms, principal = proceeds by default).
+- Quarter close: `src/app/close.js` (benchmark = last 91-day NTB auction before the quarter; `computeClose` wraps the engine's
+  `closePeriod`; `lockedBy`). Closing saves `quarterlyResults/{label}` with every figure frozen; while it exists `commit`
+  refuses changes to transactions, fund prices or deals dated in (or held across) that quarter. Reopen = delete it.
+  #/close also renders the statement of account (Cl. 9) and fee computation (Cl. 8; Clause 12 only on the screen).
+- Market: `src/app/market.js` (latest auctions, MPC, events, `rankOpportunities` with the tenor, concentration and
+  liquidity rules; FGN paper exempt from concentration). Data comes from `tools/feeds/fetch-feeds.ps1`, run by
+  `.github/workflows/market-feeds.yml` (weekdays, no secrets; CBN JSON APIs have no CORS so the browser can't call them)
+  and only ever adds missing docs. Every feed also has a manual form on #/market.
 - `src/app/firebase.js` Firestore init; `store.js` live onSnapshot state (+ 10 s "stalled" flag);
   `actions.js` every write (one batch); `portfolio.js` Firestore docs -> engine inputs; `ui.js` DOM helpers,
   formatting, modal forms; `views/` one file per screen. Forms live in modals so live re-renders don't wipe input.
@@ -52,5 +60,5 @@ no withdrawal-instruction verification or signatory register. Do not add them ba
 - `serve.ps1` local static server (PowerShell, no install).
 
 ## Running tests
-`powershell -ExecutionPolicy Bypass -File serve.ps1`, then open http://localhost:8080/tests/
+`powershell -ExecutionPolicy Bypass -File serve.ps1`, then open http://localhost:8091/tests/
 (ES modules do not load from file://).

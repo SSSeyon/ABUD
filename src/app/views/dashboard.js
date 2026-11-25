@@ -1,4 +1,6 @@
-import { BusinessCalendar, daysBetween, dec, managementFeeForPeriod } from '../../engine/index.js';
+import { BusinessCalendar, daysBetween, dec, managementFeeForPeriod, periodRates, quarterOf } from '../../engine/index.js';
+import { auctionYield, benchmarkFor } from '../close.js';
+import { rankOpportunities } from '../market.js';
 import { computeAlerts, limitsFrom } from '../alerts.js';
 import { allocationBar, lineChart } from '../charts.js';
 import { periodPicker, resolvePeriod, sharedPeriod } from '../period.js';
@@ -48,6 +50,16 @@ export function dashboardView(rerender) {
     fee = terms ? managementFeeForPeriod(r.allRows, period.start, period.end, terms.mgmtFeeRate, new BusinessCalendar()) : null;
   } catch { fee = null; }
   const tone = (x) => (x.isNegative() ? 'down' : 'up');
+  // Hurdle for the same days, when the period sits inside one quarter (that quarter's benchmark).
+  let hurdleNote = '';
+  const pq = quarterOf(period.start);
+  if (period.end <= pq.end && terms) {
+    const bench = benchmarkFor(data, pq.label);
+    if (bench) {
+      const { hurdle } = periodRates(auctionYield(bench), terms.hurdleSpread, r.days);
+      hurdleNote = ` · hurdle ${fmtPct(hurdle, 2)} (${r.twr.gt(hurdle) ? 'beaten' : 'not yet met'})`;
+    }
+  }
   const alerts = computeAlerts(data, today, limitsFrom(data));
   const highs = alerts.filter((a) => a.level === 'high').length;
 
@@ -57,15 +69,26 @@ export function dashboardView(rerender) {
       stat(`NAV ${at}`, fmtNaira(r.closingNav), `Gross of fees · opening ${fmtNaira(r.openingNav)}`),
       stat(`Cash ${at}`, fmtNaira(endRow?.cash ?? 0)),
       stat(`Holdings ${at}`, fmtNaira(endRow?.holdingsValue ?? 0)),
-      stat(`Return: ${period.key === 'custom' ? 'period' : period.label.replace(/ \(.*\)$/, '')}`, fmtPct(r.twr, 2), `Time-weighted, gross of fees${r.annualised ? ` · ${fmtPct(r.annualised, 2)} p.a.` : ''}`, tone(r.twr)),
+      stat(`Return: ${period.key === 'custom' ? 'period' : period.label.replace(/ \(.*\)$/, '')}`, fmtPct(r.twr, 2), `Time-weighted, gross of fees${r.annualised ? ` · ${fmtPct(r.annualised, 2)} p.a.` : ''}${hurdleNote}`, tone(r.twr)),
       stat('Investment income', fmtNaira(r.income), `${r.days} days`, tone(r.income)),
       stat('Management fee accrued', fee ? fmtNaira(fee.posted) : '—', terms ? `${fmtPct(terms.mgmtFeeRate)} p.a.` : 'Set mandate terms in Settings')),
   );
 
-  // Alerts (always as of today, whatever the period).
-  parts.push(h('section', { class: `card alerts-card ${highs ? 'has-high' : ''}` },
-    h('div', { class: 'card-head' }, h('h2', null, `Alerts today${alerts.length ? ` (${alerts.length})` : ''}`), alerts.length > 5 ? h('a', { href: '#/alerts' }, 'See all') : null),
-    alerts.length ? alertList(alerts, { limit: 5 }) : h('p', { class: 'muted' }, 'Nothing needs attention.')));
+  // Alerts and the top reinvestment options (always as of today, whatever the period).
+  const opp = rankOpportunities(data, today, limitsFrom(data));
+  const top = opp.ranked.slice(0, 3);
+  parts.push(h('div', { class: 'grid-2' },
+    h('section', { class: `card alerts-card ${highs ? 'has-high' : ''}` },
+      h('div', { class: 'card-head' }, h('h2', null, `Alerts today${alerts.length ? ` (${alerts.length})` : ''}`), alerts.length > 5 ? h('a', { href: '#/alerts' }, 'See all') : null),
+      alerts.length ? alertList(alerts, { limit: 5 }) : h('p', { class: 'muted' }, 'Nothing needs attention.')),
+    h('section', { class: 'card' },
+      h('div', { class: 'card-head' }, h('h2', null, 'Top options for cash'), h('a', { href: '#/market' }, 'Market')),
+      h('p', { class: 'muted small' }, `Cash to deploy ${fmtNaira(opp.cashToDeploy)}${opp.hurdle ? ` · hurdle ${fmtPct(opp.hurdle.hurdle, 2)}` : ''}`),
+      top.length
+        ? h('ol', { class: 'opps' }, top.map((o) => h('li', null,
+            h('div', null, h('strong', null, o.label), h('div', { class: 'muted small' }, `${o.tenorDays} days · ${o.source}`)),
+            h('div', { class: 'num' }, h('strong', null, fmtPct(o.yield, 2)), h('div', { class: 'muted small' }, o.pickup ? `${o.pickup.gte(0) ? '+' : '−'}${o.pickup.abs().times(10000).toFixed(0)} bps vs hurdle` : '')))))
+        : h('p', { class: 'muted' }, 'No options yet. They appear once auction results, confirmed CP quotations or recent bank deals are in.'))));
 
   const held = holdingsOn(data, period.end);
   const alloc = [

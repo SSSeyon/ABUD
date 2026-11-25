@@ -5,6 +5,8 @@ import { computeAlerts, limitsFrom } from './alerts.js';
 import { alertsView } from './views/alerts.js';
 import { dashboardView } from './views/dashboard.js';
 import { ladderView } from './views/ladder.js';
+import { marketView } from './views/market.js';
+import { closeView } from './views/close.js';
 import { historyView } from './views/history.js';
 import { holdingsView } from './views/holdings.js';
 import { reportsView } from './views/reports.js';
@@ -18,6 +20,8 @@ const ICONS = {
   holdings: 'M4 7h16M4 12h16M4 17h10',
   ladder: 'M4 19h4v-4H4zm6 0h4V9h-4zm6 0h4V4h-4z',
   transactions: 'M7 7h13l-3-3M17 17H4l3 3',
+  market: 'M3 17l6-6 4 4 8-8M15 7h6v6',
+  close: 'M5 11V8a7 7 0 0 1 14 0v3M4 11h16v10H4zm8 4v2',
   reports: 'M5 21V10m7 11V4m7 17v-7',
   history: 'M3 12a9 9 0 1 0 3-6.7L3 8m0-5v5h5m4-1v5l3 2',
   settings: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm7.4-3a7.4 7.4 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7.6 7.6 0 0 0-2-1.2L14.5 3h-5l-.4 2.6a7.6 7.6 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6a7.4 7.4 0 0 0 0 2.4l-2 1.6 2 3.4 2.4-1a7.6 7.6 0 0 0 2 1.2l.4 2.6h5l.4-2.6a7.6 7.6 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2z',
@@ -29,7 +33,9 @@ const ROUTES = {
   holdings: { label: 'Holdings', view: holdingsView },
   ladder: { label: 'Maturity ladder', view: ladderView },
   transactions: { label: 'Transactions', view: transactionsView },
+  market: { label: 'Market', view: marketView },
   reports: { label: 'Reports', view: reportsView },
+  close: { label: 'Quarter close', view: closeView },
   history: { label: 'Change history', view: historyView },
   settings: { label: 'Settings', view: settingsView },
 };

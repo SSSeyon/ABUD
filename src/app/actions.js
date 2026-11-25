@@ -3,6 +3,7 @@
 import { db, collection, doc, writeBatch, serverTimestamp } from './firebase.js';
 import { historyDocs } from './history.js';
 import { state } from './store.js';
+import { closedQuarters, lockedBy } from './close.js';
 
 /** Drop empty optional fields so documents only carry what was entered. */
 function clean(obj) {
@@ -30,6 +31,12 @@ export const historyStatus = { failing: false };
  * changes: [{ coll, id, data }] where data is the full new document, or null to delete it.
  */
 async function commit(summary, changes, { kind = 'edit' } = {}) {
+  // A closed quarter's figures are final: nothing dated in it may change until it is reopened.
+  const closed = closedQuarters(state.data);
+  for (const c of changes) {
+    const q = lockedBy(closed, c.coll, current(c.coll, c.id)) ?? lockedBy(closed, c.coll, c.data);
+    if (q) throw new Error(`${q.label} is closed, so entries dated in it can't change. Reopen it on the Quarter close screen first, or record a correction dated after it.`);
+  }
   const batch = writeBatch(db);
   const entry = [];
   for (const c of changes) {
@@ -125,7 +132,7 @@ export async function saveFundPrice(fundId, date, priceOrYield) {
 export async function restoreChange(entry) {
   await commit(
     `Undid: ${entry.summary}`,
-    entry.changes.map((c) => ({ coll: c.coll, id: c.docId, data: c.before, stamp: !['fundPrices', 'mandateTerms', 'funds', 'settings'].includes(c.coll) })),
+    entry.changes.map((c) => ({ coll: c.coll, id: c.docId, data: c.before, stamp: ['transactions', 'instruments'].includes(c.coll) })),
     { kind: 'restore' },
   );
 }
@@ -159,6 +166,31 @@ export async function reclassifyInstruments(ids, type) {
 /** Create (id null) or replace a settings document. */
 export async function saveDoc(coll, id, data) {
   const docId = id ?? newId(coll);
-  await commit(`${id ? 'Edited' : 'Added'} ${{ mandateTerms: 'mandate terms', funds: 'fund', settings: 'limits' }[coll] ?? coll}`, [{ coll, id: docId, data: clean(data), stamp: false }]);
+  await commit(`${id ? 'Edited' : 'Added'} ${{ mandateTerms: 'mandate terms', funds: 'fund', settings: 'limits', auctions: 'auction result', mpc: 'MPC decision', cpQuotes: 'CP quotation' }[coll] ?? coll}`, [{ coll, id: docId, data: clean(data), stamp: false }]);
   return docId;
+}
+
+/** Delete a settings or market document (not transactions or deals: those have their own actions). */
+export async function deleteDoc(coll, id, summary) {
+  await commit(summary ?? `Deleted ${coll} ${id}`, [{ coll, id, data: null }], { kind: 'delete' });
+}
+
+// ---------- quarter close ----------
+
+/** Saves the quarter's figures (see closeRecord) and so locks it. */
+export async function closeQuarter(record) {
+  await commit(`Closed ${record.quarter}: management fee ${record.mgmtFee}, incentive ${record.incentiveClause8}`, [
+    { coll: 'quarterlyResults', id: record.quarter, data: { ...record, closedAt: new Date().toISOString() }, stamp: false },
+  ]);
+}
+
+/** Marks a closed quarter as billed (invoice sent) on a date. */
+export async function markBilled(label, billedOn) {
+  const rec = current('quarterlyResults', label);
+  await commit(`Marked ${label} billed on ${billedOn}`, [{ coll: 'quarterlyResults', id: label, data: { ...rec, status: 'billed', billedOn }, stamp: false }]);
+}
+
+/** Removes the close record, unlocking the quarter. The old figures stay in the change history. */
+export async function reopenQuarter(label) {
+  await commit(`Reopened ${label}`, [{ coll: 'quarterlyResults', id: label, data: null }], { kind: 'delete' });
 }

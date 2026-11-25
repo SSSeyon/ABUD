@@ -16,6 +16,7 @@ service cloud.firestore {
     function isMoney(v) { return v is string && v.matches('^-?[0-9]+([.][0-9]{1,2})?$'); }
     function isPositiveMoney(v) { return isMoney(v) && !v.matches('^-.*') && !v.matches('^0+([.]0+)?$'); }
     function isRate(v) { return v is string && v.matches('^[0-9]+([.][0-9]+)?$'); }
+    function isSignedRate(v) { return v is string && v.matches('^-?[0-9]+([.][0-9]+)?$'); }
 
     match /transactions/{id} {
       function valid(d) {
@@ -88,6 +89,42 @@ service cloud.firestore {
         && isRate(request.resource.data.concentrationShare)
         && request.resource.data.maxTenorDays.matches('^[0-9]+$')
         && request.resource.data.idleDays.matches('^[0-9]+$');
+    }
+
+    // Quarter close records: one per closed quarter (id = label, e.g. 2026Q3). Deleting one reopens the quarter.
+    match /quarterlyResults/{id} {
+      function valid(d) {
+        return id.matches('^[0-9]{4}Q[1-4]$') && d.quarter == id
+          && isDate(d.periodStart) && isDate(d.periodEnd)
+          && isSignedRate(d.arip) && isRate(d.watbr) && isRate(d.hurdle)
+          && isMoney(d.mgmtFee) && isMoney(d.incentiveClause8) && isMoney(d.incentiveClause12)
+          && d.hurdleMet is bool && d.status in ['closed', 'billed'];
+      }
+      allow read, delete: if true;
+      allow create, update: if valid(request.resource.data);
+    }
+
+    // Market data: written by the scheduled feed job (tools/feeds) and by hand on the Market screen.
+    match /auctions/{id} {
+      allow read, delete: if true;
+      allow create, update: if request.resource.data.kind in ['ntb', 'omo']
+        && isDate(request.resource.data.date)
+        && request.resource.data.tenorDays.matches('^[0-9]+$')
+        && isRate(request.resource.data.stopRate);
+    }
+    match /mpc/{id} {
+      allow read, delete: if true;
+      allow create, update: if isDate(id) && request.resource.data.date == id && isRate(request.resource.data.mpr);
+    }
+    match /cpQuotes/{id} {
+      allow read, delete: if true;
+      allow create, update: if isDate(request.resource.data.date)
+        && request.resource.data.confirmed is bool
+        && (!('yield' in request.resource.data) || isRate(request.resource.data.yield));
+    }
+    match /feedStatus/{id} {
+      allow read: if true;
+      allow write: if id in ['cbn_ntb', 'cbn_omo', 'cbn_mpc', 'fmdq_cp', 'cbn_cpi'];
     }
 
     // Everything else is closed.

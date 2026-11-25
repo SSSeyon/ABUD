@@ -256,3 +256,18 @@ export function table(headers, rows, emptyText = 'Nothing here yet.') {
     ),
   );
 }
+
+/** Download rows (arrays of cells) as a CSV file that opens in Excel. */
+export function downloadCsv(filename, rows) {
+  const cell = (v) => {
+    const s = String(v ?? '');
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const text = '﻿' + rows.map((r) => r.map(cell).join(',')).join('\r\n');
+  const url = URL.createObjectURL(new Blob([text], { type: 'text/csv;charset=utf-8' }));
+  const a = h('a', { href: url, download: filename });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}

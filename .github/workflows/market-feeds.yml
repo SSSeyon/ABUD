@@ -1,0 +1,24 @@
+# Market feeds: adds new CBN auction, MPC and inflation data and FMDQ CP notices to Firestore.
+# Weekdays 07:30 and 19:00 Lagos time (CBN posts auction results in the evening). Run by hand from the Actions tab.
+# No secrets: the Firestore rules accept these public market documents. A failed feed fails the run (GitHub emails
+# the repository owner) and shows as "Failing" on the app's Market screen.
+name: Market feeds
+
+on:
+  schedule:
+    - cron: '30 6 * * 1-5'
+    - cron: '0 18 * * 1-5'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch CBN and FMDQ data
+        shell: pwsh
+        run: ./tools/feeds/fetch-feeds.ps1
