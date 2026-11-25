@@ -1,0 +1,73 @@
+rules_version = '2';
+
+// ABUD Portfolio: Firestore security rules.
+//
+// The app has NO SIGN-IN by design (internal reporting tool). These rules therefore cannot tell
+// who is calling: anyone who has the app's address can read and change these collections.
+// What the rules do: allow only the app's five collections, and reject malformed data
+// (money and rates must be decimal strings, dates YYYY-MM-DD, known instrument and transaction types).
+//
+// Collections are described in firestore/MODEL.md.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isDate(v) { return v is string && v.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$'); }
+    function isMoney(v) { return v is string && v.matches('^-?[0-9]+([.][0-9]{1,2})?$'); }
+    function isPositiveMoney(v) { return isMoney(v) && !v.matches('^-.*') && !v.matches('^0+([.]0+)?$'); }
+    function isRate(v) { return v is string && v.matches('^[0-9]+([.][0-9]+)?$'); }
+
+    match /transactions/{id} {
+      function valid(d) {
+        return d.type in ['inflow', 'withdrawal', 'fee_debit', 'invest', 'mature', 'rollover',
+                          'interest', 'fund_subscription', 'fund_redemption']
+          && isDate(d.date)
+          && (d.type == 'rollover' ? isMoney(d.amount) : isPositiveMoney(d.amount))
+          && (!(d.type in ['invest', 'mature', 'rollover', 'fund_subscription', 'fund_redemption'])
+              || d.instrumentId is string);
+      }
+      allow read, delete: if true;
+      allow create, update: if valid(request.resource.data);
+    }
+
+    match /instruments/{id} {
+      function valid(d) {
+        return d.type in ['ntb', 'omo', 'commercial_paper', 'fixed_deposit', 'money_market_fund']
+          && isPositiveMoney(d.cost)
+          && isDate(d.valueDate)
+          && (d.type == 'money_market_fund' || (isDate(d.maturityDate) && d.maturityDate > d.valueDate))
+          && (!(d.type in ['ntb', 'omo', 'commercial_paper']) || isPositiveMoney(d.faceValue))
+          && (d.type != 'fixed_deposit' || isRate(d.rate))
+          && (d.type != 'money_market_fund' || (d.fundId is string && d.pricingBasis in ['price', 'yield']))
+          && (!('discountRate' in d) || isRate(d.discountRate));
+      }
+      allow read, delete: if true;
+      allow create, update: if valid(request.resource.data);
+    }
+
+    match /mandateTerms/{effectiveFrom} {
+      allow read: if true;
+      allow write: if isDate(effectiveFrom)
+        && request.resource.data.effectiveFrom == effectiveFrom
+        && isRate(request.resource.data.mgmtFeeRate)
+        && isRate(request.resource.data.incentiveRate)
+        && isRate(request.resource.data.hurdleSpread)
+        && request.resource.data.incentiveReading in ['clause_8', 'clause_12'];
+    }
+
+    match /funds/{id} {
+      allow read: if true;
+      allow write: if request.resource.data.name is string
+        && request.resource.data.pricingBasis in ['price', 'yield'];
+    }
+
+    match /fundPrices/{id} {
+      allow read, delete: if true;
+      allow create, update: if isDate(request.resource.data.date)
+        && request.resource.data.fundId is string
+        && isRate(request.resource.data.priceOrYield);
+    }
+
+    // Everything else is closed.
+  }
+}
