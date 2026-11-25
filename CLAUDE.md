@@ -60,5 +60,5 @@ no withdrawal-instruction verification or signatory register. Do not add them ba
 - `serve.ps1` local static server (PowerShell, no install).
 
 ## Running tests
-`powershell -ExecutionPolicy Bypass -File serve.ps1`, then open http://localhost:8091/tests/
+`powershell -ExecutionPolicy Bypass -File serve.ps1` (add `-Port 8091` if 8080 is taken), then open http://localhost:8080/tests/
 (ES modules do not load from file://).
