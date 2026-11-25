@@ -17,16 +17,23 @@ try {
     $path = [Uri]::UnescapeDataString($ctx.Request.Url.AbsolutePath).TrimStart('/')
     if ($path -eq '' -or $path.EndsWith('/')) { $path += 'index.html' }
     $file = [IO.Path]::GetFullPath((Join-Path $root $path))
-    if ($file.StartsWith($root) -and (Test-Path -LiteralPath $file -PathType Leaf)) {
-      $bytes = [IO.File]::ReadAllBytes($file)
-      $ext = [IO.Path]::GetExtension($file).ToLower()
-      $ctx.Response.ContentType = if ($types.ContainsKey($ext)) { $types[$ext] } else { 'application/octet-stream' }
-      $ctx.Response.Headers.Add('Cache-Control', 'no-store')
-      $ctx.Response.OutputStream.Write($bytes, 0, $bytes.Length)
-    } else {
-      $ctx.Response.StatusCode = 404
+    try {
+      if ($file.StartsWith($root) -and (Test-Path -LiteralPath $file -PathType Leaf)) {
+        $bytes = [IO.File]::ReadAllBytes($file)
+        $ext = [IO.Path]::GetExtension($file).ToLower()
+        $ctx.Response.ContentType = if ($types.ContainsKey($ext)) { $types[$ext] } else { 'application/octet-stream' }
+        $ctx.Response.Headers.Add('Cache-Control', 'no-store')
+        $ctx.Response.ContentLength64 = $bytes.Length
+        # HEAD requests get the headers only.
+        if ($ctx.Request.HttpMethod -ne 'HEAD') { $ctx.Response.OutputStream.Write($bytes, 0, $bytes.Length) }
+      } else {
+        $ctx.Response.StatusCode = 404
+      }
+    } catch {
+      Write-Host "Request for /$path failed: $($_.Exception.Message)"
+    } finally {
+      $ctx.Response.Close()
     }
-    $ctx.Response.Close()
   }
 } finally {
   $listener.Stop()

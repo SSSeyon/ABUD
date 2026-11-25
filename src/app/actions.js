@@ -1,5 +1,6 @@
 // Every write goes through here, one batch per action.
 import { db, collection, doc, writeBatch, serverTimestamp } from './firebase.js';
+import { historyDocs } from './history.js';
 
 /** Drop empty optional fields so documents only carry what was entered. */
 function clean(obj) {
@@ -68,6 +69,25 @@ export async function saveFundPrice(fundId, date, priceOrYield) {
   const batch = writeBatch(db);
   batch.set(doc(db, 'fundPrices', `${fundId}_${date}`), { fundId, date, priceOrYield });
   await batch.commit();
+}
+
+// ---------- history import ----------
+
+/**
+ * Writes a history file's documents (see history.js) in batches of 400. Ids are fixed, so if a batch fails
+ * the import can simply be run again. Calls onProgress(written, total) after each batch.
+ */
+export async function importHistory(file, onProgress) {
+  const docs = historyDocs(file);
+  const stamped = new Set(['instruments', 'transactions']);
+  for (let i = 0; i < docs.length; i += 400) {
+    const batch = writeBatch(db);
+    for (const d of docs.slice(i, i + 400)) {
+      batch.set(doc(db, d.coll, d.id), stamped.has(d.coll) ? { ...d.data, updatedAt: serverTimestamp() } : d.data);
+    }
+    await batch.commit();
+    onProgress?.(Math.min(i + 400, docs.length), docs.length);
+  }
 }
 
 // ---------- settings ----------

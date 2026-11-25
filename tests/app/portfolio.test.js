@@ -42,6 +42,19 @@ describe('portfolio (Firestore data to engine)', () => {
     expect(last.cash.toFixed(2)).toBe('1005000.00');
   });
 
+  it('an early termination takes the holding out of NAV that day', () => {
+    // Deposit i2 matures 2026-02-02 but is terminated on 2026-01-13 for 40,250.
+    const early = { ...data, transactions: [...data.transactions, { id: 't5', type: 'mature', date: '2026-01-13', amount: '40250.00', instrumentId: 'i2' }] };
+    expect(engineInputs(early).instruments.find((i) => i.id === 'i2').closeDate).toBe('2026-01-13');
+    const row = navSeries(early, '2026-01-13').at(-1);
+    // Bill has matured (no maturity recorded, so it is off NAV and its cash is not in); deposit is out, its cash is in.
+    expect(row.holdingsValue.toFixed(2)).toBe('0.00');
+    expect(row.cash.toFixed(2)).toBe('45250.00');
+    // A maturity on (or after) the contract date sets no early close.
+    const onTime = { ...data, transactions: [...data.transactions, { id: 't5', type: 'mature', date: '2026-02-02', amount: '40720.00', instrumentId: 'i2' }] };
+    expect(engineInputs(onTime).instruments.find((i) => i.id === 'i2').closeDate).toBe(undefined);
+  });
+
   it('expected maturity value', () => {
     expect(expectedMaturityValue(data.instruments[0])).toBe('1000000.00');
     // 40,000 x 21.9% x 30/365 = 720

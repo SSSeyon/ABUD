@@ -44,11 +44,18 @@ export function closedInstrumentIds(transactions = []) {
   return new Set(transactions.filter((t) => CLOSING.has(t.type) && t.instrumentId).map((t) => t.instrumentId));
 }
 
-/** Earliest full redemption per fund holding: the holding leaves NAV that day. */
-function redemptionDates(transactions = []) {
+/**
+ * Day each holding leaves NAV ahead of schedule: a fund's first (full) redemption, or a maturity recorded
+ * before the contract maturity date (early termination, or a bill sold before maturity).
+ */
+function earlyCloseDates(transactions = [], instruments = []) {
+  const maturity = new Map(instruments.map((i) => [i.id, i.maturityDate]));
   const out = new Map();
   for (const t of transactions) {
-    if (t.type !== 'fund_redemption' || !t.instrumentId) continue;
+    if (!t.instrumentId) continue;
+    const due = maturity.get(t.instrumentId);
+    const early = t.type === 'fund_redemption' || (t.type === 'mature' && due && t.date < due);
+    if (!early) continue;
     const prev = out.get(t.instrumentId);
     if (!prev || t.date < prev) out.set(t.instrumentId, t.date);
   }
@@ -69,8 +76,8 @@ export function toEngineInstrument(i, closeDate) {
 /** Engine inputs from Firestore data. Every recorded transaction counts. */
 export function engineInputs(data) {
   const txs = data.transactions ?? [];
-  const redeemed = redemptionDates(txs);
-  const instruments = (data.instruments ?? []).map((i) => toEngineInstrument(i, redeemed.get(i.id)));
+  const closed = earlyCloseDates(txs, data.instruments ?? []);
+  const instruments = (data.instruments ?? []).map((i) => toEngineInstrument(i, closed.get(i.id)));
   const transactions = txs.map((t) => ({
     id: t.id, date: t.date, type: t.type, amount: t.amount, instrumentId: t.instrumentId, approved: true,
   }));

@@ -1,0 +1,338 @@
+# ABUD transaction history, inception to 30 Sep 2026, transcribed from "ABUD Schedule 30.09.2026.xlsx".
+# build-history.ps1 turns this into data/history-2026-09-30.json. Fees and fund yields are read from the
+# workbook itself ("Fees & Cash" fee table, "Cowrywise App" and "TrustBanc App" daily rates).
+#
+# Dates are Excel serial numbers as they appear in the workbook (45658 = 2025-01-01).
+# Rates are net of 10% WHT (the rate the workbook accrues at); the gross rate goes in the notes.
+# CP face values are net of the 10% WHT on the discount (the cash actually received at maturity).
+#
+# Line kinds (pipe separated):
+#   IN|date|amount|notes                         inflow from Access
+#   WD|date|amount|notes                         withdrawal to Access
+#   FEE|date|amount|notes                        fee or charge not in the workbook's fee table
+#   FD|key|counterparty|ref|valueDate|principal|netRate|grossRate|maturity|notes
+#   BILL|key|ntb or commercial_paper|counterparty|ref|valueDate|cost|face|maturity|discountRate|notes
+#   FUND|key|fundKey|ref|valueDate|cost|notes    cost may be ACC:<key>+<n> or ACC:<key>-<n> (chained balance)
+#   CLOSE|key|date|amount|notes                  amount: a number, ACC (value accrued to that date),
+#                                                ROLL:<key> [+n|-n] (rolled into <key>: its principal, plus cash paid out or less cash added), or
+#                                                SOLVE (proceeds that bring the cash balance level with the bank ledger's that day)
+# A close dated before the deal's maturity is an early termination.
+
+FUNDDEF|cowrywise|Cowrywise|Cowrywise
+FUNDDEF|trustbanc|TrustBanc|TrustBanc
+
+# ---------- Inflows from Access (Inflow-Outflow sheet) ----------
+IN|44419|264575890.74|
+IN|44568|163547635.56|
+IN|44782|343889700.71|
+IN|44935|227174223.98|
+IN|45148|435150030.67|
+IN|45314|131136570.92|
+IN|45538|691520583.17|
+IN|45681|158373970.29|
+IN|45869|965621969.12|
+IN|46049|238507529.58|
+IN|46295|1300777799.09|
+
+# ---------- Withdrawals to Access (Inflow-Outflow sheet) ----------
+WD|44484|34563761.09|20,500,000.00 paid direct from Primera, balance from the trustee account
+WD|44581|32482153.15|Paid direct from Primera
+WD|44650|100608290.80|Paid direct from Primera
+WD|44678|7516771.10|Paid direct from Providus
+WD|44896|27852107.24|Paid direct from Providus
+WD|45096|25243291.73|Paid direct from Providus. The workbook's 62,665,406.87 for this date also includes the 37,422,115.14 MBO Refund, recorded as a fee debit
+WD|45257|71439248.53|Paid direct from Providus
+WD|45463|129993222.45|Paid direct from Providus
+WD|45583|69784676.32|
+WD|45792|70000000.00|Workbook dates this 45790; bank ledger 45792
+WD|45846|2339493173.25|
+WD|45880|137979422.41|
+WD|45947|146615893.24|
+WD|46002|25824993.59|
+WD|46059|41588730.56|
+WD|46080|58407549.67|
+WD|46244|229181896.18|
+WD|46244|106269383.00|
+
+# ---------- Bank charges in the bank ledger but not in the workbook fee table ----------
+FEE|45838|893.51|Debit per bank ledger, not in the fee table
+FEE|46211|50.00|Commission per bank ledger, not in the fee table
+FEE|46244|207.50|Charges per bank ledger, not in the fee table
+
+# ---------- Primera / Koins placements ----------
+FD|PRI-1.1|Primera/Koins|Primera 1.1|44425|250000000|0.162|0.18|44484|Placement
+CLOSE|PRI-1.1|44484|255091780.82|Early liquidation 256,546,575.34 less penalty 1,454,794.52
+FD|PRI-1.2|Primera/Koins|Primera 1.2|44484|229500000|0.162|0.18|44606|Pre-liquidation reinvestment
+CLOSE|PRI-1.2|44606|241926953.43|Matured; 200m rolled to 3.1, 47,018,734.24 sent to the trustee account
+FD|PRI-2.1|Primera/Koins|Primera 2.1|44573|150000000|0.16038|0.1782|44581|Placement
+CLOSE|PRI-2.1|44581|150467638.35|Early liquidation 150,526,093.15 less penalty 58,454.80
+FD|PRI-2.1b|Primera/Koins|Primera 2.1 (reinvested)|44581|117517846.85|0.16038|0.1782|44753|Pre-liquidation reinvestment
+CLOSE|PRI-2.1b|44650|120681362.88|Early liquidation 121,076,802.39 less penalty 395,439.51
+FD|PRI-2.1c|Primera/Koins|Primera 2.1 (reinvested)|44650|16909556|0.16038|0.1782|44753|Pre-liquidation reinvestment
+CLOSE|PRI-2.1c|44753|17673988.38|Matured
+FD|PRI-3.1|Primera/Koins|Primera 3.1|44606|200000000|0.162|0.18|44726|Roll-over of matured 250m
+CLOSE|PRI-3.1|44726|ACC|Matured; 200m rolled to 3.2, interest sent to the trustee account on 44728
+FD|PRI-3.2|Primera/Koins|Primera 3.2|44726|200000000|0.1665|0.185|44846|Roll-over of 3.1
+CLOSE|PRI-3.2|44846|ROLL:PRI-3.21|Rolled to 3.21
+FD|PRI-4|Primera/Koins|Primera 4|44753|21247148.26|0.144|0.16|44935|Reinvestment
+CLOSE|PRI-4|44935|ROLL:PRI-4.01|Rolled to 4.01
+FD|PRI-3|Primera/Koins|Primera 3|44788|340000000|0.162|0.18|44879|Fresh investment
+CLOSE|PRI-3|44879|ROLL:PRI-3.00|Rolled to 3.00
+FD|PRI-3.00|Primera/Koins|Primera 3.00|44879|353732273.97|0.18|0.2|44969|Roll-over of matured 340m
+CLOSE|PRI-3.00|44969|369432172.16|Rolled to 3.01 on 44970
+FD|PRI-3.21|Primera/Koins|Primera 3.21|44846|210947945.21|0.1755|0.195|45026|Roll-over of 3.20
+CLOSE|PRI-3.21|45026|ROLL:PRI-3.22|
+FD|PRI-3.01|Primera/Koins|Primera 3.01|44970|369432172.16|0.198|0.22|45061|Roll-over of 3.00
+CLOSE|PRI-3.01|45061|ROLL:PRI-3.02|
+FD|PRI-4.01|Primera/Koins|Primera 4.01|44935|22772751.72|0.162|0.18|45117|Roll-over of 4.00
+CLOSE|PRI-4.01|45117|ROLL:PRI-4.02|
+FD|PRI-3.22|Primera/Koins|Primera 3.22|45026|229205056.41|0.189|0.21|45208|Roll-over of 3.21
+CLOSE|PRI-3.22|45208|ROLL:PRI-3.23|
+FD|PRI-3.02|Primera/Koins|Primera 3.02|45061|387668963.61|0.198|0.22|45152|Roll-over of 3.01
+CLOSE|PRI-3.02|45152|ROLL:PRI-3.03|
+FD|PRI-4.02|Primera/Koins|Primera 4.02|45117|24612290.93|0.162|0.18|45299|Roll-over of 4.01
+CLOSE|PRI-4.02|45299|ROLL:PRI-4.03|
+FD|PRI-3.03|Primera/Koins|Primera 3.03|45152|406806003.02|0.198|0.22|45243|Roll-over of 3.02
+CLOSE|PRI-3.03|45243|ROLL:PRI-3.04|
+FD|PRI-3.23|Primera/Koins|Primera 3.23|45208|250805592.11|0.189|0.21|45390|Roll-over of 3.22
+CLOSE|PRI-3.23|45390|ROLL:PRI-3.24|
+FD|PRI-3.04|Primera/Koins|Primera 3.04|45243|426887730.59|0.198|0.22|45334|Roll-over of 3.03
+CLOSE|PRI-3.04|45334|ROLL:PRI-3.05|
+FD|PRI-4.03|Primera/Koins|Primera 4.03|45299|26600424.59|0.162|0.18|45481|Roll-over of 4.02
+CLOSE|PRI-4.03|45481|ROLL:PRI-4.04|
+FD|PRI-3.05|Primera/Koins|Primera 3.05|45334|448172304.23|0.198|0.22|45425|Roll-over of 3.04
+CLOSE|PRI-3.05|45425|ROLL:PRI-3.06|
+FD|PRI-3.24|Primera/Koins|Primera 3.24|45390|274441785.96|0.189|0.21|45572|Roll-over of 3.23
+CLOSE|PRI-3.24|45572|ROLL:PRI-3.25|
+FD|PRI-3.06|Primera/Koins|Primera 3.06|45425|470296053.76|0.198|0.22|45516|Roll-over of 3.05
+CLOSE|PRI-3.06|45516|ROLL:PRI-3.07|
+FD|PRI-4.04|Primera/Koins|Primera 4.04|45481|28749155.87|0.252|0.28|45663|Roll-over of 4.03
+CLOSE|PRI-4.04|45663|ROLL:PRI-4.05|
+FD|PRI-3.07|Primera/Koins|Primera 3.07|45516|493511928.54|0.252|0.28|45607|Roll-over of 3.06
+CLOSE|PRI-3.07|45607|ROLL:PRI-3.08|
+FD|PRI-3.25|Primera/Koins|Primera 3.25|45572|300305480.63|0.189|0.21|45730|Roll-over of 3.24
+CLOSE|PRI-3.25|45730|ROLL:PRI-3.25b +16141405.87|Terminated; 308,733,176.85 rolled, balance to the trustee account
+FD|PRI-3.08|Primera/Koins|Primera 3.08|45607|524517998.53|0.252|0.28|45698|Roll-over of 3.07
+CLOSE|PRI-3.08|45698|ROLL:PRI-3.09|
+FD|PRI-4.05|Primera/Koins|Primera 4.05|45663|32361625.14|0.252|0.28|45730|Roll-over of 4.04
+CLOSE|PRI-4.05|45730|33858594.13|Terminated; to the trustee account
+FD|PRI-3.09|Primera/Koins|Primera 3.09|45698|557472099.19|0.252|0.28|45789|Roll-over of 3.08
+CLOSE|PRI-3.09|45789|ROLL:PRI-3.10|
+FD|PRI-3.25b|Primera/Koins|Primera 3.25 (rolled)|45730|308733176.85|0.189|0.21|45754|Termination and roll-over of 3.25 for 50m payment
+CLOSE|PRI-3.25b|45754|322111479.00|Rolled to 3.26 at 322,111,479.00 per the Primera register, above the accrued value; difference folded in here
+FD|PRI-3.26|Primera/Koins|Primera 3.26|45754|322111479.00|0.252|0.28|45818|Roll-over of 3.25
+CLOSE|PRI-3.26|45818|322111479.00|50m part payment, balance rolled (register credits no interest)
+FD|PRI-3.26b|Primera/Koins|Primera 3.26 (after part payment)|45818|272111479.00|0.252|0.28|45821|Roll-over after 50m part payment
+CLOSE|PRI-3.26b|45821|272111479.00|50m part payment, balance rolled (register credits no interest)
+FD|PRI-3.26c|Primera/Koins|Primera 3.26 (after part payment)|45821|222111479.00|0.252|0.28|45842|Roll-over after 50m part payment
+CLOSE|PRI-3.26c|45842|225162986.40|Terminated
+FD|PRI-3.10|Primera/Koins|Primera 3.10|45789|592160126.94|0.252|0.28|45842|Roll-over of 3.09
+CLOSE|PRI-3.10|45842|SOLVE|Terminated (register 613,368,477.91). Amount set so the day ties to the bank ledger; absorbs both termination penalties, the Page reconciliation and Primera's unreconciled differences
+
+# ---------- Page placements ----------
+FD|PAG-1|Page|Page 1|45145|199652885|0.198|0.22|45236|Placement
+CLOSE|PAG-1|45236|ROLL:PAG-1.01|
+FD|PAG-2|Page|Page 2|45155|124347115|0.1665|0.185|45187|Placement
+CLOSE|PAG-2|45187|ROLL:PAG-2.01|
+FD|PAG-2.01|Page|Page 2.01|45187|126162242.20|0.1665|0.185|45217|Roll-over of 2.0
+CLOSE|PAG-2.01|45217|ROLL:PAG-2.02|
+FD|PAG-2.02|Page|Page 2.02|45217|127888763.85|0.1665|0.185|45247|Roll-over of 2.01
+CLOSE|PAG-2.02|45247|ROLL:PAG-2.03|
+FD|PAG-1.01|Page|Page 1.01|45236|209508626.59|0.198|0.22|45327|Roll-over of 1.0
+CLOSE|PAG-1.01|45327|ROLL:PAG-1.02|
+FD|PAG-2.03|Page|Page 2.03|45247|129638912.82|0.1665|0.185|45278|Roll-over of 2.02
+CLOSE|PAG-2.03|45278|ROLL:PAG-2.04|
+FD|PAG-2.04|Page|Page 2.04|45278|131472149.12|0.1665|0.185|45308|Roll-over of 2.03
+CLOSE|PAG-2.04|45308|ROLL:PAG-2.05|
+FD|PAG-2.05|Page|Page 2.05|45308|133268714.71|0.1665|0.185|45338|Roll-over of 2.04
+CLOSE|PAG-2.05|45338|ROLL:PAG-2.06|
+FD|PAG-1.02|Page|Page 1.02|45327|219840022.51|0.198|0.22|45418|Roll-over of 1.01
+CLOSE|PAG-1.02|45418|ROLL:PAG-1.03 -131136570.92|
+FD|PAG-2.06|Page|Page 2.06|45338|135087504.95|0.1665|0.185|45369|Roll-over of 2.05
+CLOSE|PAG-2.06|45369|ROLL:PAG-2.07|
+FD|PAG-2.07|Page|Page 2.07|45369|136992570.95|0.1665|0.185|45399|Roll-over of 2.06
+CLOSE|PAG-2.07|45399|ROLL:PAG-2.08|
+FD|PAG-1.03|Page|Page 1.03|45418|361799209.62|0.216|0.24|45509|Roll-over of 1.02 plus 131,136,570.92 fresh cash
+CLOSE|PAG-1.03|45509|ROLL:PAG-1.04|
+FD|PAG-2.08|Page|Page 2.08|45399|138862182.68|0.1755|0.195|45429|Roll-over of 2.07
+CLOSE|PAG-2.08|45429|ROLL:PAG-2.09|
+FD|PAG-2.09|Page|Page 2.09|45429|140859749.32|0.1845|0.205|45460|Roll-over of 2.08
+CLOSE|PAG-2.09|45460|ROLL:PAG-2.10|
+FD|PAG-2.10|Page|Page 2.10|45460|143060971.55|0.1845|0.205|45490|Roll-over of 2.09
+CLOSE|PAG-2.10|45490|ROLL:PAG-2.11|
+FD|PAG-2.11|Page|Page 2.11|45490|145224475.59|0.1845|0.205|45520|Roll-over of 2.10
+CLOSE|PAG-2.11|45520|ROLL:PAG-2.12|
+FD|PAG-2.12|Page|Page 2.12|45520|147420698.19|0.1935|0.215|45551|Roll-over of 2.11
+CLOSE|PAG-2.12|45551|ROLL:PAG-2.13|
+FD|PAG-2.13|Page|Page 2.13|45551|149836826.77|0.1935|0.215|45581|Roll-over of 2.12
+CLOSE|PAG-2.13|45581|ROLL:PAG-2.14|
+FD|PAG-1.04|Page|Page 1.04|45509|383388539.50|0.216|0.24|45600|Roll-over of 1.03
+CLOSE|PAG-1.04|45600|ROLL:PAG-1.05|
+FD|PAG-2.14|Page|Page 2.14|45581|152213337.09|0.1935|0.215|45611|Roll-over of 2.13
+CLOSE|PAG-2.14|45611|ROLL:PAG-2.15|
+FD|PAG-1.05|Page|Page 1.05|45600|406266150.70|0.24|0.24|45691|Roll-over of 1.04 (no WHT from here)
+CLOSE|PAG-1.05|45691|ROLL:PAG-1.06|
+FD|PAG-2.15|Page|Page 2.15|45611|154627540.43|0.1935|0.215|45642|Roll-over of 2.14
+CLOSE|PAG-2.15|45642|ROLL:PAG-2.16|
+FD|PAG-2.16|Page|Page 2.16|45642|157161784.42|0.1935|0.215|45672|Roll-over of 2.15
+CLOSE|PAG-2.16|45672|ROLL:PAG-2.17|
+FD|PAG-2.17|Page|Page 2.17|45672|159773685.97|0.1935|0.215|45702|Roll-over of 2.16
+CLOSE|PAG-2.17|45702|ROLL:PAG-2.18|
+FD|PAG-2.18|Page|Page 2.18|45702|162314744.18|0.1935|0.215|45733|Roll-over of 2.17
+CLOSE|PAG-2.18|45733|ROLL:PAG-2.19|
+FD|PAG-2.19|Page|Page 2.19|45733|164982264.71|0.1935|0.215|45763|Roll-over of 2.18
+CLOSE|PAG-2.19|45763|ROLL:PAG-2.20|
+FD|PAG-1.06|Page|Page 1.06|45691|430533003.58|0.24|0.24|45782|Roll-over of 1.05
+CLOSE|PAG-1.06|45782|ROLL:PAG-1.07|
+FD|PAG-2.20|Page|Page 2.20|45763|167598991.62|0.1935|0.215|45793|Roll-over of 2.19
+CLOSE|PAG-2.20|45793|ROLL:PAG-2.21|
+FD|PAG-1.07|Page|Page 1.07|45782|456294211.25|0.24|0.24|45842|Roll-over of 1.06
+CLOSE|PAG-1.07|45842|468861002.64|Terminated (penalty and reconciliation folded into Primera 3.10 on the same day)
+FD|PAG-2.21|Page|Page 2.21|45793|170271787.48|0.1935|0.215|45823|Roll-over of 2.20
+CLOSE|PAG-2.21|45823|ROLL:PAG-2.22|
+FD|PAG-2.22|Page|Page 2.22|45823|173070076.02|0.1935|0.215|45842|Roll-over of 2.21
+CLOSE|PAG-2.22|45842|174287028.19|Terminated
+FD|PAG-3|Page|Page 3|45880|400000000|0.225|0.25|45970|Placement
+CLOSE|PAG-3|45970|ROLL:PAG-3.01|
+FD|PAG-3.01|Page|Page 3.01|45970|422191780.82|0.225|0.25|46060|Rollover of 3.00
+CLOSE|PAG-3.01|46060|ROLL:PAG-3.02|
+FD|PAG-3.02|Page|Page 3.02|46060|445614749.48|0.225|0.25|46150|Rollover of 3.01
+CLOSE|PAG-3.02|46150|ROLL:PAG-3.03|
+FD|PAG-3.03|Page|Page 3.03|46150|470337211.61|0.225|0.25|46241|Rollover of 3.02
+CLOSE|PAG-3.03|46241|ROLL:PAG-3.04|
+FD|PAG-3.04|Page|Page 3.04|46241|496721196.29|0.225|0.25|46289|Rollover of 3.03
+CLOSE|PAG-3.04|46289|SOLVE|Matured: 147m to the trustee account, balance placed as 3.05 (register shortfall of 15,562.88 folded in)
+FD|PAG-3.05|Page|Page 3.05|46289|364403137.30|0.207|0.23|46333|Placement of 3.04 balance
+CLOSE|PAG-3.05|46290|ACC|100m partial liquidation to the trustee account, balance continues as 3.05
+FD|PAG-3.05b|Page|Page 3.05 (after partial liquidation)|46290|ACC:PAG-3.05-100000000|0.207|0.23|46333|Balance of 3.05 after 100m partial liquidation
+
+# ---------- Coronation call deposits ----------
+FD|COR-1|Coronation Merchant Bank|Coronation call 1|45828|100000000|0.09|0.10|45842|Call
+CLOSE|COR-1|45842|100345205.48|Terminated
+FD|COR-2|Coronation Merchant Bank|Coronation call 2|45870|983000000|0.09|0.10|45880|Call
+CLOSE|COR-2|45880|985423835.61|Terminated
+FD|COR-3|Coronation Merchant Bank|Coronation call 3|45884|348000000|0.0855|0.095|45887|Call
+CLOSE|COR-3|45887|348244553.43|Terminated
+FD|COR-4|Coronation Merchant Bank|Coronation call 4|45887|198000000|0.0855|0.095|45908|Call
+CLOSE|COR-4|45908|198973997.26|Terminated
+FD|COR-5|Coronation Merchant Bank|Coronation call 5|45887|150000000|0.144|0.16|45917|Call
+CLOSE|COR-5|45917|151775342.47|Terminated
+FD|COR-6|Coronation Merchant Bank|Coronation call 6|45932|252355397.67|0.0855|0.095|45947|Call
+CLOSE|COR-6|45947|253242098.49|Terminated
+FD|COR-7|Coronation Merchant Bank|Coronation call 7|45978|106000000|0.072|0.08|45994|Call
+CLOSE|COR-7|45994|106334553.43|Terminated
+FD|COR-8|Coronation Merchant Bank|Coronation call 8|45985|158000000|0.0765|0.085|46059|Call
+CLOSE|COR-8|46059|160450515.07|Terminated
+FD|COR-9|Coronation Merchant Bank|Coronation call 9|46015|78000000|0.0765|0.085|46022|Call
+CLOSE|COR-9|46022|78114435.61|Terminated
+FD|COR-10|Coronation Merchant Bank|Coronation call 10|46045|19000000|0.072|0.08|46129|Call
+CLOSE|COR-10|46129|19314827.40|Terminated
+FD|COR-11|Coronation Merchant Bank|Coronation call 11|46050|238507529.58|0.063|0.07|46083|Call
+CLOSE|COR-11|46083|239866042.33|Terminated
+FD|COR-12|Coronation Merchant Bank|Coronation call 12|46080|60000000|0.0675|0.075|46211|Call
+CLOSE|COR-12|46211|61453561.64|Terminated
+FD|COR-13|Coronation Merchant Bank|Coronation call 13|46199|9000000|0.072|0.08|46318|Call
+FD|COR-14|Coronation Merchant Bank|Coronation call 14|46203|119000000|0.081|0.09|46211|Call
+CLOSE|COR-14|46211|119211265.76|Terminated
+
+# ---------- Providus placements ----------
+FD|PRO-1|Providus Bank|Providus 1|44608|47018734.24|0.045|0.05|44638|Placement
+CLOSE|PRO-1|44638|ROLL:PRO-1b|Rolled
+FD|PRO-1b|Providus Bank|Providus 1 (rolled)|44638|47192639.15|0.045|0.05|44678|Roll-over of matured 47m
+CLOSE|PRO-1b|44678|47420313.64|7,516,771.10 to Access, balance reinvested
+FD|PRO-1c|Providus Bank|Providus 1 (reinvested)|44678|39903542.54|0.045|0.05|44896|Pre-liquidation reinvestment
+CLOSE|PRO-1c|44896|40988637.84|Early liquidation: 27,852,107.24 to Access, balance reinvested
+FD|PRO-2|Providus Bank|Providus 2|44732|10652054.80|0.054|0.06|44760|Placement
+CLOSE|PRO-2|44760|ROLL:PRO-2b|Matured; reinvested on 44771
+FD|PRO-2b|Providus Bank|Providus 2 (rolled)|44771|10696180.57|0.09|0.10|45096|Reinvestment of matured 10.6m
+CLOSE|PRO-2b|45096|11445490.91|Terminated for Access transfer
+FD|PRO-1d|Providus Bank|Providus 1 (reinvested)|44896|13136530.60|0.09|0.10|45096|Pre-liquidation reinvestment
+CLOSE|PRO-1d|45096|13797800.82|Terminated for Access transfer (register also shows an early termination penalty of 86,845.09, not reflected in the amounts paid)
+FD|PRO-2.00|Providus Bank|Providus 2.00|45189|100000000|0.099|0.11|45250|Placement
+CLOSE|PRO-2.00|45250|ROLL:PRO-2.01|
+FD|PRO-3.00|Providus Bank|Providus 3.00|45189|210652885|0.099|0.11|45279|Placement
+CLOSE|PRO-3.00|45279|ROLL:PRO-3.01|
+FD|PRO-2.01|Providus Bank|Providus 2.01|45250|101654520.55|0.099|0.11|45257|Roll-over of 2.00
+CLOSE|PRO-2.01|45257|101654520.58|71,439,248.53 to Access, balance reinvested
+FD|PRO-3.01|Providus Bank|Providus 3.01|45279|215795123.92|0.099|0.11|45369|Roll-over of 3.00
+CLOSE|PRO-3.01|45369|ROLL:PRO-3.02|
+FD|PRO-2.02|Providus Bank|Providus 2.02|45257|30215272.05|0.099|0.11|45287|Reinvestment of 2.01 balance after transfer
+CLOSE|PRO-2.02|45287|ROLL:PRO-2.03a|
+FD|PRO-2.03a|Providus Bank|Providus 2.03|45287|30461133.30|0.099|0.11|45317|Reinvestment of 2.02
+CLOSE|PRO-2.03a|45317|ROLL:PRO-2.03b|
+FD|PRO-2.03b|Providus Bank|Providus 2.03|45317|30905152.18|0.099|0.11|45348|Reinvestment
+CLOSE|PRO-2.03b|45348|ROLL:PRO-2.03c|
+FD|PRO-2.03c|Providus Bank|Providus 2.03|45348|31165009.47|0.099|0.11|45378|Reinvestment
+CLOSE|PRO-2.03c|45378|ROLL:PRO-2.03d|
+FD|PRO-3.02|Providus Bank|Providus 3.02|45369|221062889.82|0.15993|0.1777|45460|Roll-over of 3.01
+CLOSE|PRO-3.02|45463|230179492.08|Terminated: 129,993,222.46 to Access, balance rolled to 3.03
+FD|PRO-2.03d|Providus Bank|Providus 2.03|45378|31418598.73|0.099|0.11|45408|Reinvestment
+CLOSE|PRO-2.03d|45408|ROLL:PRO-2.03e|
+FD|PRO-2.03e|Providus Bank|Providus 2.03|45408|31674251.43|0.144|0.16|45439|Reinvestment
+CLOSE|PRO-2.03e|45439|ROLL:PRO-2.03f|
+FD|PRO-2.03f|Providus Bank|Providus 2.03|45439|32061631.87|0.144|0.16|45469|Reinvestment
+CLOSE|PRO-2.03f|45469|ROLL:PRO-2.03g|Matured; reinvested on 45470
+FD|PRO-3.03|Providus Bank|Providus 3.03|45463|100186269.62|0.16|0.177778|45495|Roll-over of 3.02
+CLOSE|PRO-3.03|45495|ROLL:PRO-3.04|
+FD|PRO-2.03g|Providus Bank|Providus 2.03|45470|32453750.02|0.16|0.177778|45502|Reinvestment
+CLOSE|PRO-2.03g|45502|ROLL:PRO-2.03h|
+FD|PRO-2.03h|Providus Bank|Providus 2.03|45502|32863467.50|0.144|0.16|45532|Reinvestment
+CLOSE|PRO-2.03h|45532|ROLL:PRO-2.03i|Matured; reinvested on 45534
+FD|PRO-2.03i|Providus Bank|Providus 2.03|45534|33277223.94|0.144|0.16|45565|Reinvestment
+CLOSE|PRO-2.03i|45565|ROLL:PRO-2.04|
+FD|PRO-3.04|Providus Bank|Providus 3.04|45495|101591007.39|0.16|0.177778|45525|Roll-over of 3.03
+CLOSE|PRO-3.04|45525|ROLL:PRO-3.05|
+FD|PRO-3.05|Providus Bank|Providus 3.05|45525|102926414.22|0.16|0.177778|45555|Roll-over of 3.04
+CLOSE|PRO-3.05|45555|ROLL:PRO-3.06|
+FD|PRO-3.06|Providus Bank|Providus 3.06|45555|104279374.89|0.16|0.177778|45586|Roll-over of 3.05
+CLOSE|PRO-3.06|45583|105860983.10|Terminated
+FD|PRO-2.04|Providus Bank|Providus 2.04|45565|33683096.97|0.144|0.16|45595|Reinvestment of 2.03
+CLOSE|PRO-2.04|45595|ROLL:PRO-2.05|
+FD|PRO-2.05|Providus Bank|Providus 2.05|45595|34080667.95|0.144|0.16|45606|Reinvestment of 2.04
+CLOSE|PRO-2.05|45606|34199303.00|Matured; paid to the trustee account on 45607
+
+# ---------- Treasury bills (via FCSL) ----------
+BILL|NTB-1|ntb|FGN (via FCSL)|T-bill 6 Feb 2025|45555|466644022.01|500000000|45694|0.198|Yield 21.43%
+CLOSE|NTB-1|45694|500000000|Matured; proceeds used for T-bill 4 Dec 2025 on 45695
+BILL|NTB-2|ntb|FGN (via FCSL)|T-bill 4 Dec 2025|45695|430051469.86|500000000|45995|0.1925|Yield 22.87%
+CLOSE|NTB-2|45845|460387671.23|Sold 45842 (loss on sale 3,824,708.70 per register), settled 45845
+BILL|NTB-3|ntb|FGN (via FCSL)|T-bill 5 Mar 2026|45764|255493661.64|300000000|46086|0.19|Yield 22.83%
+CLOSE|NTB-3|45845|262296986.30|Sold 45842 (loss on sale 3,977,713.82 per register), settled 45845
+
+# ---------- Commercial paper (face value net of 10% WHT on the discount) ----------
+BILL|CP-1|commercial_paper|Dufil Prima Foods|Dufil Prima CP|45582|211827553.52|237182755.35|45762|0.238306|Gross face 240,000,000; yield 27%
+CLOSE|CP-1|45762|237182755.35|Matured, net of WHT
+BILL|CP-2|commercial_paper|Dangote Sugar|Dangote Sugar CP|45709|133859789.84|157475979.00|45978|0.221567|Gross face 160,100,000; yield 26.5%
+CLOSE|CP-2|45978|157475979.00|Matured, net of WHT; paid to the trustee account on 45979
+BILL|CP-3|commercial_paper|Stanbic IBTC|Stanbic CP|45775|101704308.16|118170430.80|46043|0.207647|Gross face 120,000,000; yield 24.5%
+CLOSE|CP-3|46043|118170430.80|Matured, net of WHT
+BILL|CP-4|commercial_paper|Johnvents|Johnvents CP|46022|108196221.37|118819622.14|46202|0.19836|Gross face 120,000,000; yield 22%
+CLOSE|CP-4|46202|118819622.14|Matured, net of WHT
+BILL|CP-5|commercial_paper|Pay Aza|Pay Aza CP|46085|150001304.30|181639630.43|46444|0.1903825|Gross face 185,155,000; yield 23.5%. Register settlement date 46080; dated 46085, when the bank ledger shows it paid
+BILL|CP-6|commercial_paper|TrustBanc|TrustBanc CP|46211|173281501.37|197328150.14|46478|0.181945|Gross face 200,000,000; yield 21%
+
+# ---------- Cowrywise money market fund (yield basis; dates per bank ledger) ----------
+FUND|CW-1|cowrywise|Cowrywise 1|45610|86000000|Subscription
+CLOSE|CW-1|45723|ACC|Balance carried into the next holding
+FUND|CW-2|cowrywise|Cowrywise 2|45723|ACC:CW-1+95000000|Balance plus 95m subscription
+CLOSE|CW-2|45731|ACC|
+FUND|CW-3|cowrywise|Cowrywise 3|45731|ACC:CW-2-100000000|Balance after 100m withdrawal
+CLOSE|CW-3|45776|ACC|
+FUND|CW-4|cowrywise|Cowrywise 4|45776|ACC:CW-3+30000000|Balance plus 30m subscription
+CLOSE|CW-4|45792|ACC|
+FUND|CW-5|cowrywise|Cowrywise 5|45792|ACC:CW-4-70000000|Balance after 70m withdrawal
+CLOSE|CW-5|45841|52822199.64|Full redemption
+FUND|CW-6|cowrywise|Cowrywise 6|45908|198973997.27|Subscription from Coronation call 4 proceeds
+CLOSE|CW-6|46022|ACC|
+FUND|CW-7|cowrywise|Cowrywise 7|46022|ACC:CW-6-30000000|Balance after 30m withdrawal
+CLOSE|CW-7|46234|ACC|
+FUND|CW-8|cowrywise|Cowrywise 8|46234|ACC:CW-7-106000000|Balance after 106m withdrawal
+CLOSE|CW-8|46240|SOLVE|Full redemption (92,039,125.89 per register; bank ledger receipt with TrustBanc is 81.79 lower)
+
+# ---------- TrustBanc money market fund ----------
+FUND|TB-1|trustbanc|TrustBanc 1|46044|100000000|Subscription
+CLOSE|TB-1|46129|ACC|
+FUND|TB-2|trustbanc|TrustBanc 2|46129|ACC:TB-1+100000000|Balance plus 100m subscription
+CLOSE|TB-2|46240|ACC|
+FUND|TB-3|trustbanc|TrustBanc 3|46240|ACC:TB-2-137128805.90|Balance after 137,128,805.90 withdrawal
+CLOSE|TB-3|46290|SOLVE|Full redemption (80,898,612.50 per register)

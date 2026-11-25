@@ -1,10 +1,14 @@
 import { dec } from '../../engine/index.js';
-import { saveDoc } from '../actions.js';
+import { importHistory, saveDoc } from '../actions.js';
+import { HISTORY_FILE, importStatus } from '../history.js';
 import { loadedAll, state } from '../store.js';
-import { fmtDate, fmtPct, h, openForm, parsePercent, table, toast, todayISO } from '../ui.js';
+import { confirmDialog, errorText, fmtDate, fmtNaira, fmtPct, h, openForm, parsePercent, table, toast, todayISO } from '../ui.js';
 
 const NEEDS = ['mandateTerms', 'funds'];
 let section = 'mandate';
+
+/** History file, fetched once when the Import tab first opens. */
+const history = { file: null, error: null, loading: false, progress: null };
 
 export function settingsView(rerender) {
   if (!loadedAll(NEEDS)) return h('p', { class: 'muted' }, 'Loading…');
@@ -14,9 +18,67 @@ export function settingsView(rerender) {
     'div',
     null,
     h('h1', null, 'Settings'),
-    h('div', { class: 'tabs' }, tab('mandate', 'Mandate terms'), tab('funds', 'Funds')),
-    section === 'funds' ? fundsSection() : mandateSection(),
+    h('div', { class: 'tabs' }, tab('mandate', 'Mandate terms'), tab('funds', 'Funds'), tab('import', 'Import history')),
+    section === 'funds' ? fundsSection() : section === 'import' ? importSection(rerender) : mandateSection(),
   );
+}
+
+// ---------- history import ----------
+function importSection(rerender) {
+  if (!history.file && !history.error && !history.loading) {
+    history.loading = true;
+    fetch(HISTORY_FILE)
+      .then((r) => { if (!r.ok) throw new Error(`Could not load ${HISTORY_FILE} (${r.status})`); return r.json(); })
+      .then((f) => { history.file = f; })
+      .catch((e) => { history.error = errorText(e); })
+      .finally(() => { history.loading = false; rerender(); });
+  }
+  const card = (...children) => h('section', { class: 'card' }, h('h2', null, 'Import transaction history'), ...children);
+  if (history.error) return card(h('p', { class: 'bad' }, history.error));
+  if (!history.file || !loadedAll(['transactions', 'instruments'])) return card(h('p', { class: 'muted' }, 'Loading…'));
+
+  const f = history.file;
+  const status = importStatus(state.data, f);
+  const count = (type) => f.transactions.filter((t) => t.type === type).length;
+  return card(
+    h('p', null, `History from the ABUD schedule workbook, inception to ${fmtDate(f.asOf)}.`),
+    table(
+      ['What', 'Count'],
+      [
+        ['Deals (placements, rollovers, bills, CPs, fund holdings)', f.instruments.length],
+        ['Inflows from Access', count('inflow')],
+        ['Withdrawals', count('withdrawal')],
+        ['Fees and bank charges', count('fee_debit')],
+        ['Maturities, terminations and redemptions', count('mature') + count('fund_redemption')],
+        ['Fund yield points (Cowrywise, TrustBanc)', f.fundPrices.length],
+      ].map(([a, b]) => h('tr', null, h('td', null, a), h('td', { class: 'num' }, String(b)))),
+    ),
+    h('p', null, `After import, at ${fmtDate(f.asOf)}: cash ${fmtNaira(f.check.cash)} (equal to the bank ledger), holdings ${fmtNaira(f.check.holdings)}, NAV ${fmtNaira(f.check.nav)}.`),
+    history.progress
+      ? h('p', null, `Importing… ${history.progress}`)
+      : status.canImport
+        ? h('button', { class: 'primary', onclick: (e) => runImport(e.target, f, status, rerender) }, status.resuming ? 'Finish import' : 'Import history')
+        : h('p', { class: 'muted' }, status.reason),
+  );
+}
+
+async function runImport(button, file, status, rerender) {
+  const ok = await confirmDialog({
+    title: status.resuming ? 'Finish the import?' : 'Import transaction history?',
+    message: `This writes ${file.instruments.length} deals and ${file.transactions.length} transactions to the shared database. Running it again overwrites the same records, so it never duplicates them.`,
+    confirmLabel: 'Import',
+  });
+  if (!ok) return;
+  button.disabled = true;
+  try {
+    await importHistory(file, (done, total) => { history.progress = `${done} of ${total} records`; rerender(); });
+    toast('History imported.');
+  } catch (err) {
+    toast(`Import stopped: ${errorText(err)}. Run it again to finish.`, 'bad');
+  } finally {
+    history.progress = null;
+    rerender();
+  }
 }
 
 // ---------- mandate terms ----------
