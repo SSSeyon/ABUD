@@ -123,7 +123,7 @@ foreach ($line in Get-Content -Encoding UTF8 (Join-Path $PSScriptRoot 'source.tx
       $type = @{ IN = 'inflow'; WD = 'withdrawal'; FEE = 'fee_debit' }[$f[0]]
       $flows.Add(@{ type = $type; date = [int]$f[1]; amount = (Num $f[2]); notes = $f[3] })
     }
-    'FD' { $inst[$f[1]] = @{ key = $f[1]; type = 'fixed_deposit'; counterpartyName = $f[2]; ref = $f[3]; valueDate = [int]$f[4]; costSpec = $f[5]; rate = $f[6]; gross = $f[7]; maturityDate = [int]$f[8]; notes = $f[9] } }
+    { $_ -in 'FD', 'CALL' } { $inst[$f[1]] = @{ key = $f[1]; type = $(if ($f[0] -eq 'CALL') { 'call_deposit' } else { 'fixed_deposit' }); counterpartyName = $f[2]; ref = $f[3]; valueDate = [int]$f[4]; costSpec = $f[5]; rate = $f[6]; gross = $f[7]; maturityDate = [int]$f[8]; notes = $f[9] } }
     'BILL' { $inst[$f[1]] = @{ key = $f[1]; type = $f[2]; counterpartyName = $f[3]; ref = $f[4]; valueDate = [int]$f[5]; costSpec = $f[6]; faceValue = (Num $f[7]); maturityDate = [int]$f[8]; discountRate = $f[9]; notes = $f[10] } }
     'FUND' { $inst[$f[1]] = @{ key = $f[1]; type = 'money_market_fund'; fundKey = $f[2]; ref = $f[3]; valueDate = [int]$f[4]; costSpec = $f[5]; notes = $f[6] } }
     'CLOSE' {
@@ -137,7 +137,7 @@ foreach ($line in Get-Content -Encoding UTF8 (Join-Path $PSScriptRoot 'source.tx
 # ---------- amounts ----------
 function Accrued($i, [int]$date) {
   $cost = $i.cost
-  if ($i.type -eq 'fixed_deposit') { return $cost + $cost * (Num $i.rate) * ($date - $i.valueDate) / 365 }
+  if ($i.type -in 'fixed_deposit', 'call_deposit') { return $cost + $cost * (Num $i.rate) * ($date - $i.valueDate) / 365 }
   if ($i.type -eq 'money_market_fund') {
     $acc = [decimal]0
     for ($d = $i.valueDate + 1; $d -le $date; $d++) { $acc += $cost * (YieldOn $i.fundKey $d) / 365 }

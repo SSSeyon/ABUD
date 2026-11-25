@@ -1,7 +1,8 @@
-import { BusinessCalendar, daysBetween, managementFeeForPeriod, quarterOf, timeWeightedReturn } from '../../engine/index.js';
-import { expectedMaturityValue, mandateOn, maturityWatch, navSeries, TYPE_LABELS } from '../portfolio.js';
+import { BusinessCalendar, daysBetween, dec, managementFeeForPeriod, quarterOf, timeWeightedReturn } from '../../engine/index.js';
+import { allocationBar, lineChart } from '../charts.js';
+import { ASSET_CLASSES, CLASS_LABELS, expectedMaturityValue, holdingsOn, mandateOn, maturityWatch, navSeries, TYPE_LABELS } from '../portfolio.js';
 import { loadedAll, state } from '../store.js';
-import { fmtDate, fmtNaira, fmtPct, h, table, todayISO } from '../ui.js';
+import { classTag, fmtDate, fmtNaira, fmtPct, h, table, todayISO } from '../ui.js';
 
 const NEEDS = ['transactions', 'instruments', 'fundPrices', 'mandateTerms'];
 
@@ -9,7 +10,9 @@ function stat(label, value, note) {
   return h('div', { class: 'stat' }, h('div', { class: 'stat-label' }, label), h('div', { class: 'stat-value' }, value), note ? h('div', { class: 'stat-note' }, note) : null);
 }
 
-export function dashboardView() {
+let navRange = 'year';
+
+export function dashboardView(rerender) {
   if (!loadedAll(NEEDS)) return h('p', { class: 'muted' }, 'Loading…');
   const data = state.data;
   const today = todayISO();
@@ -21,7 +24,7 @@ export function dashboardView() {
     return h('div', { class: 'card bad' }, h('h2', null, 'NAV could not be calculated'), h('p', null, err.message));
   }
 
-  const parts = [h('h1', null, 'Dashboard')];
+  const parts = [h('div', { class: 'page-head' }, h('div', null, h('h1', null, 'Dashboard'), h('p', { class: 'subtitle' }, `Access Holdings Plc unclaimed dividend portfolio · ${fmtDate(today)}`)))];
   if (!rows.length) {
     parts.push(h('div', { class: 'card' }, h('p', null, 'No transactions yet. Record the opening inflow under Transactions.')));
   } else {
@@ -45,6 +48,22 @@ export function dashboardView() {
         stat(`${q.label} management fee accrued`, fee ? fmtNaira(fee.posted) : '—', terms ? `${fmtPct(terms.mgmtFeeRate)} p.a.` : 'Set mandate terms in Settings'),
       ),
     );
+
+    // NAV history and where the money is now.
+    const range = navRange === 'all' ? rows : rows.slice(-365);
+    const held = holdingsOn(data, today);
+    const alloc = [
+      ...ASSET_CLASSES.filter((c) => c.key !== 'cash').map((c) => ({ ...c, value: held.filter((x) => x.inst?.type === c.key).reduce((t, x) => t.plus(x.value), dec(0)) })),
+      { key: 'cash', label: CLASS_LABELS.cash, value: last.cash },
+    ];
+    const rangeBtn = (key, label) => h('button', { class: `chip ${navRange === key ? 'active' : ''}`, 'aria-pressed': String(navRange === key), onclick: () => { navRange = key; rerender(); } }, label);
+    parts.push(
+      h('div', { class: 'grid-2' },
+        h('section', { class: 'card' },
+          h('div', { class: 'card-head' }, h('h2', null, 'Net asset value'), h('div', { class: 'chips' }, rangeBtn('year', '12 months'), rangeBtn('all', 'Since inception'))),
+          lineChart(range.map((r) => ({ date: r.date, value: r.nav })), { label: 'NAV' })),
+        h('section', { class: 'card' }, h('h2', null, 'Allocation today'), allocationBar(alloc))),
+    );
   }
 
   const { due, overdue } = maturityWatch(data, today, 14);
@@ -54,7 +73,7 @@ export function dashboardView() {
       { class: late ? 'bad' : null },
       h('td', null, fmtDate(i.maturityDate)),
       h('td', null, late ? `${-daysBetween(today, i.maturityDate)} days overdue` : `${daysBetween(today, i.maturityDate)} days`),
-      h('td', null, TYPE_LABELS[i.type]),
+      h('td', null, classTag(i.type, TYPE_LABELS[i.type])),
       h('td', null, i.counterpartyName ?? ''),
       h('td', { class: 'num' }, fmtNaira(expectedMaturityValue(i))),
     );

@@ -2970,7 +2970,7 @@
                         },
                         {
                             "key":  "COR-1",
-                            "type":  "fixed_deposit",
+                            "type":  "call_deposit",
                             "counterpartyName":  "Coronation Merchant Bank",
                             "cost":  "100000000.00",
                             "rate":  "0.09",
@@ -2980,7 +2980,7 @@
                         },
                         {
                             "key":  "COR-2",
-                            "type":  "fixed_deposit",
+                            "type":  "call_deposit",
                             "counterpartyName":  "Coronation Merchant Bank",
                             "cost":  "983000000.00",
                             "rate":  "0.09",
@@ -2990,7 +2990,7 @@
                         },
                         {
                             "key":  "COR-3",
-                            "type":  "fixed_deposit",
+                            "type":  "call_deposit",
                             "counterpartyName":  "Coronation Merchant Bank",
                             "cost":  "348000000.00",
                             "rate":  "0.0855",
@@ -3000,7 +3000,7 @@
                         },
                         {
                             "key":  "COR-4",
-                            "type":  "fixed_deposit",
+                            "type":  "call_deposit",
                             "counterpartyName":  "Coronation Merchant Bank",
                             "cost":  "198000000.00",
                             "rate":  "0.0855",
@@ -3010,7 +3010,7 @@
                         },
                         {
                             "key":  "COR-5",
-                            "type":  "fixed_deposit",
+                            "type":  "call_deposit",
                             "counterpartyName":  "Coronation Merchant Bank",
                             "cost":  "150000000.00",
                             "rate":  "0.144",
@@ -3020,7 +3020,7 @@
                         },
                         {
                             "key":  "COR-6",
-                            "type":  "fixed_deposit",
+                            "type":  "call_deposit",
                             "counterpartyName":  "Coronation Merchant Bank",
                             "cost":  "252355397.67",
                             "rate":  "0.0855",
@@ -3030,7 +3030,7 @@
                         },
                         {
                             "key":  "COR-7",
-                            "type":  "fixed_deposit",
+                            "type":  "call_deposit",
                             "counterpartyName":  "Coronation Merchant Bank",
                             "cost":  "106000000.00",
                             "rate":  "0.072",
@@ -3040,7 +3040,7 @@
                         },
                         {
                             "key":  "COR-8",
-                            "type":  "fixed_deposit",
+                            "type":  "call_deposit",
                             "counterpartyName":  "Coronation Merchant Bank",
                             "cost":  "158000000.00",
                             "rate":  "0.0765",
@@ -3050,7 +3050,7 @@
                         },
                         {
                             "key":  "COR-9",
-                            "type":  "fixed_deposit",
+                            "type":  "call_deposit",
                             "counterpartyName":  "Coronation Merchant Bank",
                             "cost":  "78000000.00",
                             "rate":  "0.0765",
@@ -3060,7 +3060,7 @@
                         },
                         {
                             "key":  "COR-10",
-                            "type":  "fixed_deposit",
+                            "type":  "call_deposit",
                             "counterpartyName":  "Coronation Merchant Bank",
                             "cost":  "19000000.00",
                             "rate":  "0.072",
@@ -3070,7 +3070,7 @@
                         },
                         {
                             "key":  "COR-11",
-                            "type":  "fixed_deposit",
+                            "type":  "call_deposit",
                             "counterpartyName":  "Coronation Merchant Bank",
                             "cost":  "238507529.58",
                             "rate":  "0.063",
@@ -3080,7 +3080,7 @@
                         },
                         {
                             "key":  "COR-12",
-                            "type":  "fixed_deposit",
+                            "type":  "call_deposit",
                             "counterpartyName":  "Coronation Merchant Bank",
                             "cost":  "60000000.00",
                             "rate":  "0.0675",
@@ -3090,7 +3090,7 @@
                         },
                         {
                             "key":  "COR-13",
-                            "type":  "fixed_deposit",
+                            "type":  "call_deposit",
                             "counterpartyName":  "Coronation Merchant Bank",
                             "cost":  "9000000.00",
                             "rate":  "0.072",
@@ -3100,7 +3100,7 @@
                         },
                         {
                             "key":  "COR-14",
-                            "type":  "fixed_deposit",
+                            "type":  "call_deposit",
                             "counterpartyName":  "Coronation Merchant Bank",
                             "cost":  "119000000.00",
                             "rate":  "0.081",

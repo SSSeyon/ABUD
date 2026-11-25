@@ -10,7 +10,7 @@
 #   IN|date|amount|notes                         inflow from Access
 #   WD|date|amount|notes                         withdrawal to Access
 #   FEE|date|amount|notes                        fee or charge not in the workbook's fee table
-#   FD|key|counterparty|ref|valueDate|principal|netRate|grossRate|maturity|notes
+#   FD|key|counterparty|ref|valueDate|principal|netRate|grossRate|maturity|notes   (CALL: same fields, a call deposit)
 #   BILL|key|ntb or commercial_paper|counterparty|ref|valueDate|cost|face|maturity|discountRate|notes
 #   FUND|key|fundKey|ref|valueDate|cost|notes    cost may be ACC:<key>+<n> or ACC:<key>-<n> (chained balance)
 #   CLOSE|key|date|amount|notes                  amount: a number, ACC (value accrued to that date),
@@ -207,32 +207,32 @@ CLOSE|PAG-3.05|46290|ACC|100m partial liquidation to the trustee account, balanc
 FD|PAG-3.05b|Page|Page 3.05 (after partial liquidation)|46290|ACC:PAG-3.05-100000000|0.207|0.23|46333|Balance of 3.05 after 100m partial liquidation
 
 # ---------- Coronation call deposits ----------
-FD|COR-1|Coronation Merchant Bank|Coronation call 1|45828|100000000|0.09|0.10|45842|Call
+CALL|COR-1|Coronation Merchant Bank|Coronation call 1|45828|100000000|0.09|0.10|45842|Call
 CLOSE|COR-1|45842|100345205.48|Terminated
-FD|COR-2|Coronation Merchant Bank|Coronation call 2|45870|983000000|0.09|0.10|45880|Call
+CALL|COR-2|Coronation Merchant Bank|Coronation call 2|45870|983000000|0.09|0.10|45880|Call
 CLOSE|COR-2|45880|985423835.61|Terminated
-FD|COR-3|Coronation Merchant Bank|Coronation call 3|45884|348000000|0.0855|0.095|45887|Call
+CALL|COR-3|Coronation Merchant Bank|Coronation call 3|45884|348000000|0.0855|0.095|45887|Call
 CLOSE|COR-3|45887|348244553.43|Terminated
-FD|COR-4|Coronation Merchant Bank|Coronation call 4|45887|198000000|0.0855|0.095|45908|Call
+CALL|COR-4|Coronation Merchant Bank|Coronation call 4|45887|198000000|0.0855|0.095|45908|Call
 CLOSE|COR-4|45908|198973997.26|Terminated
-FD|COR-5|Coronation Merchant Bank|Coronation call 5|45887|150000000|0.144|0.16|45917|Call
+CALL|COR-5|Coronation Merchant Bank|Coronation call 5|45887|150000000|0.144|0.16|45917|Call
 CLOSE|COR-5|45917|151775342.47|Terminated
-FD|COR-6|Coronation Merchant Bank|Coronation call 6|45932|252355397.67|0.0855|0.095|45947|Call
+CALL|COR-6|Coronation Merchant Bank|Coronation call 6|45932|252355397.67|0.0855|0.095|45947|Call
 CLOSE|COR-6|45947|253242098.49|Terminated
-FD|COR-7|Coronation Merchant Bank|Coronation call 7|45978|106000000|0.072|0.08|45994|Call
+CALL|COR-7|Coronation Merchant Bank|Coronation call 7|45978|106000000|0.072|0.08|45994|Call
 CLOSE|COR-7|45994|106334553.43|Terminated
-FD|COR-8|Coronation Merchant Bank|Coronation call 8|45985|158000000|0.0765|0.085|46059|Call
+CALL|COR-8|Coronation Merchant Bank|Coronation call 8|45985|158000000|0.0765|0.085|46059|Call
 CLOSE|COR-8|46059|160450515.07|Terminated
-FD|COR-9|Coronation Merchant Bank|Coronation call 9|46015|78000000|0.0765|0.085|46022|Call
+CALL|COR-9|Coronation Merchant Bank|Coronation call 9|46015|78000000|0.0765|0.085|46022|Call
 CLOSE|COR-9|46022|78114435.61|Terminated
-FD|COR-10|Coronation Merchant Bank|Coronation call 10|46045|19000000|0.072|0.08|46129|Call
+CALL|COR-10|Coronation Merchant Bank|Coronation call 10|46045|19000000|0.072|0.08|46129|Call
 CLOSE|COR-10|46129|19314827.40|Terminated
-FD|COR-11|Coronation Merchant Bank|Coronation call 11|46050|238507529.58|0.063|0.07|46083|Call
+CALL|COR-11|Coronation Merchant Bank|Coronation call 11|46050|238507529.58|0.063|0.07|46083|Call
 CLOSE|COR-11|46083|239866042.33|Terminated
-FD|COR-12|Coronation Merchant Bank|Coronation call 12|46080|60000000|0.0675|0.075|46211|Call
+CALL|COR-12|Coronation Merchant Bank|Coronation call 12|46080|60000000|0.0675|0.075|46211|Call
 CLOSE|COR-12|46211|61453561.64|Terminated
-FD|COR-13|Coronation Merchant Bank|Coronation call 13|46199|9000000|0.072|0.08|46318|Call
-FD|COR-14|Coronation Merchant Bank|Coronation call 14|46203|119000000|0.081|0.09|46211|Call
+CALL|COR-13|Coronation Merchant Bank|Coronation call 13|46199|9000000|0.072|0.08|46318|Call
+CALL|COR-14|Coronation Merchant Bank|Coronation call 14|46203|119000000|0.081|0.09|46211|Call
 CLOSE|COR-14|46211|119211265.76|Terminated
 
 # ---------- Providus placements ----------

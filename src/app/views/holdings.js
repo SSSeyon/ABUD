@@ -1,8 +1,8 @@
 import { FundPriceBook, Valuer, daysBetween, dec } from '../../engine/index.js';
 import { createDeal, saveFundPrice, saveTransaction, updateDeal } from '../actions.js';
-import { closedInstrumentIds, engineInputs, expectedMaturityValue, openingTransactions, toEngineInstrument, TYPE_LABELS } from '../portfolio.js';
+import { ASSET_CLASSES, closedInstrumentIds, DEPOSIT_TYPES, engineInputs, expectedMaturityValue, openingTransactions, toEngineInstrument, TYPE_LABELS } from '../portfolio.js';
 import { loadedAll, state } from '../store.js';
-import { fmtDate, fmtNaira, fmtPct, h, openForm, parseDecimal, parseMoney, parsePercent, table, toast, todayISO } from '../ui.js';
+import { classTag, fmtDate, fmtNaira, fmtPct, h, openForm, parseDecimal, parseMoney, parsePercent, table, toast, todayISO } from '../ui.js';
 
 const DISCOUNT = ['ntb', 'omo', 'commercial_paper'];
 const NEEDS = ['transactions', 'instruments', 'fundPrices', 'funds'];
@@ -20,19 +20,21 @@ export function holdingsView() {
     .filter((i) => !closed.has(i.id))
     .sort((a, b) => ((a.maturityDate ?? '9999') < (b.maturityDate ?? '9999') ? -1 : 1));
 
-  const rows = live.map((i) => {
-    let value;
+  const valueOf = (i) => {
     try {
-      value = fmtNaira(valuer.valueOn(toEngineInstrument(i), today));
+      return valuer.valueOn(toEngineInstrument(i), today);
     } catch (err) {
-      value = err.message;
+      return err.message;
     }
-    const rate = i.type === 'fixed_deposit' ? fmtPct(i.rate, 2) : i.discountRate ? `${fmtPct(i.discountRate, 2)} disc.` : '—';
+  };
+  const fmtValue = (v) => (typeof v === 'string' ? v : fmtNaira(v));
+  const row = (i, value) => {
+    const rate = DEPOSIT_TYPES.has(i.type) ? fmtPct(i.rate, 2) : i.discountRate ? `${fmtPct(i.discountRate, 2)} disc.` : '—';
     const dtm = i.maturityDate ? daysBetween(today, i.maturityDate) : null;
     return h(
       'tr',
       { class: dtm != null && dtm < 0 ? 'bad' : null },
-      h('td', null, TYPE_LABELS[i.type], i.type === 'money_market_fund' ? h('div', { class: 'muted' }, funds.get(i.fundId)?.name ?? '') : null),
+      h('td', null, TYPE_LABELS[i.type], i.type === 'money_market_fund' ? h('div', { class: 'muted' }, funds.get(i.fundId)?.name ?? '') : null, dtm != null && dtm < 0 ? h('div', { class: 'badge warn' }, 'Matured: record it') : null),
       h('td', null, i.counterpartyName ?? ''),
       h('td', { class: 'num' }, fmtNaira(i.cost)),
       h('td', { class: 'num' }, i.faceValue ? fmtNaira(i.faceValue) : fmtNaira(expectedMaturityValue(i))),
@@ -40,15 +42,29 @@ export function holdingsView() {
       h('td', null, fmtDate(i.valueDate)),
       h('td', null, i.maturityDate ? fmtDate(i.maturityDate) : 'Open'),
       h('td', { class: 'num' }, dtm == null ? '' : String(dtm)),
-      h('td', { class: 'num' }, value),
+      h('td', { class: 'num' }, fmtValue(value)),
       h('td', null, actionsFor(i, funds.get(i.fundId), opening.get(i.id))),
     );
-  });
+  };
+
+  // Grouped by asset class, each with a subtotal row.
+  const rows = [];
+  let total = dec(0);
+  for (const c of ASSET_CLASSES) {
+    const group = live.filter((i) => i.type === c.key);
+    if (!group.length) continue;
+    const values = group.map(valueOf);
+    const sub = values.reduce((t, v) => (typeof v === 'string' ? t : t.plus(v)), dec(0));
+    total = total.plus(sub);
+    rows.push(h('tr', { class: 'group' }, h('td', { colspan: 8 }, classTag(c.key, c.label), h('span', { class: 'muted' }, ` · ${group.length}`)), h('td', { class: 'num' }, fmtNaira(sub)), h('td', null)));
+    group.forEach((i, n) => rows.push(row(i, values[n])));
+  }
+  if (rows.length) rows.push(h('tr', { class: 'total' }, h('td', { colspan: 8 }, 'Total holdings'), h('td', { class: 'num' }, fmtNaira(total)), h('td', null)));
 
   return h(
     'div',
     null,
-    h('div', { class: 'page-head' }, h('h1', null, 'Holdings'), h('button', { class: 'primary', onclick: () => dealForm(data) }, 'New deal')),
+    h('div', { class: 'page-head' }, h('div', null, h('h1', null, 'Holdings'), h('p', { class: 'subtitle' }, `Open positions at end of ${fmtDate(today)}, by asset class`)), h('button', { class: 'primary', onclick: () => dealForm(data) }, 'New deal')),
     table(
       ['Instrument', 'Counterparty', { label: 'Cost', num: true }, { label: 'At maturity', num: true }, 'Rate', 'Value date', 'Maturity', { label: 'Days left', num: true }, { label: 'Value today', num: true }, ''],
       rows,
@@ -94,7 +110,7 @@ function dealForm(data, inst, openingTx) {
       { name: 'faceValue', label: 'Face value (₦)', type: 'money', required: true, value: inst?.faceValue ?? '', showIf: isDiscount },
       { name: 'cost', label: 'Amount paid / principal (₦)', type: 'money', required: true, value: inst?.cost ?? '' },
       { name: 'discountRate', label: 'Discount rate (%)', type: 'percent', value: pct(inst?.discountRate), help: 'For reference; value is driven by cost and face value.', showIf: isDiscount },
-      { name: 'rate', label: 'Interest rate (% p.a.)', type: 'percent', required: true, value: pct(inst?.rate), showIf: (v) => v.type === 'fixed_deposit' },
+      { name: 'rate', label: 'Interest rate (% p.a.)', type: 'percent', required: true, value: pct(inst?.rate), showIf: (v) => DEPOSIT_TYPES.has(v.type) },
       { name: 'units', label: 'Units', type: 'decimal', required: true, value: inst?.units ?? '', showIf: (v) => v.type === 'money_market_fund' && funds.find((f) => f.id === v.fundId)?.pricingBasis === 'price' },
       ...(inst ? [] : [{ name: 'reference', label: 'Deal reference', type: 'text' }, { name: 'notes', label: 'Notes', type: 'textarea' }]),
     ],
@@ -117,7 +133,7 @@ function dealForm(data, inst, openingTx) {
         if (dec(next.faceValue).lte(next.cost)) throw new Error('Face value must be more than the amount paid for a discount instrument.');
         if (v.discountRate) next.discountRate = parsePercent(v.discountRate, 'Discount rate');
       }
-      if (v.type === 'fixed_deposit') next.rate = parsePercent(v.rate, 'Interest rate');
+      if (DEPOSIT_TYPES.has(v.type)) next.rate = parsePercent(v.rate, 'Interest rate');
       if (v.type === 'money_market_fund') {
         const fund = funds.find((f) => f.id === v.fundId);
         if (!fund) throw new Error('Choose a fund.');

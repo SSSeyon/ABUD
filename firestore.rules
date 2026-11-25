@@ -4,7 +4,7 @@ rules_version = '2';
 //
 // The app has NO SIGN-IN by design (internal reporting tool). These rules therefore cannot tell
 // who is calling: anyone who has the app's address can read and change these collections.
-// What the rules do: allow only the app's five collections, and reject malformed data
+// What the rules do: allow only the app's collections, and reject malformed data
 // (money and rates must be decimal strings, dates YYYY-MM-DD, known instrument and transaction types).
 //
 // Collections are described in firestore/MODEL.md.
@@ -32,12 +32,12 @@ service cloud.firestore {
 
     match /instruments/{id} {
       function valid(d) {
-        return d.type in ['ntb', 'omo', 'commercial_paper', 'fixed_deposit', 'money_market_fund']
+        return d.type in ['ntb', 'omo', 'commercial_paper', 'fixed_deposit', 'call_deposit', 'money_market_fund']
           && isPositiveMoney(d.cost)
           && isDate(d.valueDate)
           && (d.type == 'money_market_fund' || (isDate(d.maturityDate) && d.maturityDate > d.valueDate))
           && (!(d.type in ['ntb', 'omo', 'commercial_paper']) || isPositiveMoney(d.faceValue))
-          && (d.type != 'fixed_deposit' || isRate(d.rate))
+          && (!(d.type in ['fixed_deposit', 'call_deposit']) || isRate(d.rate))
           && (d.type != 'money_market_fund' || (d.fundId is string && d.pricingBasis in ['price', 'yield']))
           && (!('discountRate' in d) || isRate(d.discountRate));
       }
@@ -66,6 +66,17 @@ service cloud.firestore {
       allow create, update: if isDate(request.resource.data.date)
         && request.resource.data.fundId is string
         && isRate(request.resource.data.priceOrYield);
+    }
+
+    // Change history: one document per change, holding each touched document before and after.
+    // Append-only, so a mistake can always be traced and undone.
+    match /audit/{id} {
+      allow read: if true;
+      allow create: if request.resource.data.summary is string
+        && request.resource.data.kind in ['edit', 'delete', 'restore']
+        && request.resource.data.changes is list
+        && request.resource.data.at == request.time;
+      allow update, delete: if false;
     }
 
     // Everything else is closed.

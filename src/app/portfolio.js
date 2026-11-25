@@ -1,6 +1,8 @@
 // Turns Firestore documents into engine inputs and answers portfolio questions for the screens.
 // No Firebase imports here, so it is testable in tests/index.html.
-import { addDays, buildDailyNav, daysBetween, dec, toKobo, DAYS_IN_YEAR } from '../engine/index.js';
+import {
+  addDays, buildDailyNav, daysBetween, dec, eachDay, toKobo, timeWeightedReturn, DAYS_IN_YEAR, FundPriceBook, ONE, Valuer, ZERO,
+} from '../engine/index.js';
 
 const OPENING = new Set(['invest', 'fund_subscription']);
 const CLOSING = new Set(['mature', 'fund_redemption']);
@@ -11,8 +13,33 @@ export const TYPE_LABELS = {
   omo: 'OMO bill',
   commercial_paper: 'Commercial paper',
   fixed_deposit: 'Fixed deposit',
+  call_deposit: 'Call deposit',
   money_market_fund: 'Money market fund',
 };
+
+/** Deposits earn simple interest at a rate: fixed deposits and calls value the same way. */
+export const DEPOSIT_TYPES = new Set(['fixed_deposit', 'call_deposit']);
+
+/**
+ * Asset classes, in a fixed order that also fixes each class's chart colour (--class-<key> in styles.css).
+ * Transactions not tied to a deal (inflows, withdrawals, fees) belong to 'cash'.
+ */
+export const ASSET_CLASSES = [
+  { key: 'ntb', label: 'Treasury bills' },
+  { key: 'commercial_paper', label: 'Commercial paper' },
+  { key: 'fixed_deposit', label: 'Fixed deposits' },
+  { key: 'call_deposit', label: 'Call deposits' },
+  { key: 'money_market_fund', label: 'Money market funds' },
+  { key: 'omo', label: 'OMO bills' },
+  { key: 'cash', label: 'Cash and flows' },
+];
+export const CLASS_LABELS = Object.fromEntries(ASSET_CLASSES.map((c) => [c.key, c.label]));
+
+/** Asset class of a transaction: its deal's instrument type, or 'cash'. */
+export function txClass(t, instruments) {
+  const i = t.instrumentId ? instruments.get(t.instrumentId) : null;
+  return i?.type ?? 'cash';
+}
 
 export const TX_LABELS = {
   inflow: 'Inflow from Access',
@@ -66,7 +93,7 @@ export function toEngineInstrument(i, closeDate) {
   const base = { id: i.id, valueDate: i.valueDate };
   if (closeDate) base.closeDate = closeDate;
   if (DISCOUNT.has(i.type)) return { ...base, type: i.type, faceValue: i.faceValue, cost: i.cost, maturityDate: i.maturityDate };
-  if (i.type === 'fixed_deposit') return { ...base, type: i.type, principal: i.cost, rate: i.rate, maturityDate: i.maturityDate };
+  if (DEPOSIT_TYPES.has(i.type)) return { ...base, type: 'fixed_deposit', principal: i.cost, rate: i.rate, maturityDate: i.maturityDate };
   if (i.type === 'money_market_fund') {
     return { ...base, type: i.type, fundId: i.fundId, pricingBasis: i.pricingBasis, cost: i.cost, units: i.units };
   }
@@ -96,7 +123,7 @@ export function navSeries(data, asOf) {
 /** Expected cash at maturity: face value for discount instruments; principal plus interest for deposits. */
 export function expectedMaturityValue(i) {
   if (DISCOUNT.has(i.type)) return dec(i.faceValue).toFixed(2);
-  if (i.type === 'fixed_deposit') {
+  if (DEPOSIT_TYPES.has(i.type)) {
     const p = dec(i.cost);
     const days = daysBetween(i.valueDate, i.maturityDate);
     return toKobo(p.plus(p.times(i.rate).times(days).div(DAYS_IN_YEAR))).toFixed(2);
@@ -117,6 +144,85 @@ export function maturityWatch(data, today, days = 14) {
   }
   const byDate = (a, b) => (a.maturityDate < b.maturityDate ? -1 : 1);
   return { due: due.sort(byDate), overdue: overdue.sort(byDate) };
+}
+
+/**
+ * Everything a report for the period start..end (inclusive) needs. Values are end of day; "opening" is the
+ * end of the day before start. Per asset class:
+ *   income = closing value - opening value - money invested + money returned (maturities, redemptions, interest).
+ * The cash class carries the external flows, so the class incomes add up to the portfolio's income.
+ */
+export function periodReport(data, start, end) {
+  const rows = navSeries(data, end);
+  const before = rows.filter((r) => r.date < start).at(-1);
+  const period = rows.filter((r) => r.date >= start);
+  const openingNav = before ? before.nav : ZERO;
+  const closingNav = rows.at(-1)?.nav ?? ZERO;
+  const openingCash = before ? before.cash : ZERO;
+  const closingCash = rows.at(-1)?.cash ?? ZERO;
+  const days = daysBetween(start, end) + 1;
+
+  const instruments = new Map((data.instruments ?? []).map((i) => [i.id, i]));
+  const txs = (data.transactions ?? []).filter((t) => t.date >= start && t.date <= end)
+    .sort((a, b) => (a.date === b.date ? 0 : a.date < b.date ? -1 : 1));
+  const total = (type) => txs.filter((t) => t.type === type).reduce((s, t) => s.plus(t.amount), ZERO);
+  const inflows = total('inflow');
+  const withdrawals = total('withdrawal');
+  const fees = total('fee_debit');
+  const netFlow = inflows.minus(withdrawals).minus(fees);
+  const income = closingNav.minus(openingNav).minus(netFlow);
+  const twr = period.length ? timeWeightedReturn(period, openingNav) : ZERO;
+  const annualised = days >= 1 && twr.gt(-1) ? ONE.plus(twr).pow(DAYS_IN_YEAR.div(days)).minus(ONE) : null;
+
+  // Daily value of every holding over the period, summed by class.
+  const inputs = engineInputs(data);
+  const valuer = new Valuer(new FundPriceBook(inputs.fundPrices));
+  const prevDay = addDays(start, -1);
+  const live = inputs.instruments.filter((i) => i.valueDate <= end && (i.closeDate ?? i.maturityDate ?? '9999-12-31') >= prevDay);
+  const classOf = (id) => instruments.get(id)?.type;
+  const blank = () => ({ opening: ZERO, closing: ZERO, invested: ZERO, returned: ZERO, valueDays: ZERO });
+  const byClass = new Map();
+  const cls = (k) => byClass.get(k) ?? byClass.set(k, blank()).get(k);
+  for (const date of [prevDay, ...eachDay(start, end)]) {
+    for (const i of live) {
+      const v = valuer.valueOn(i, date);
+      if (v.isZero()) continue;
+      const c = cls(classOf(i.id));
+      if (date === prevDay) c.opening = c.opening.plus(v);
+      else c.valueDays = c.valueDays.plus(v);
+      if (date === end) c.closing = c.closing.plus(v);
+    }
+  }
+  for (const t of txs) {
+    const k = txClass(t, instruments);
+    if (k === 'cash') continue;
+    const c = cls(k);
+    if (OPENING.has(t.type)) c.invested = c.invested.plus(t.amount);
+    else if (CLOSING.has(t.type) || t.type === 'interest') c.returned = c.returned.plus(t.amount);
+  }
+  const classes = ASSET_CLASSES.filter((a) => a.key !== 'cash' && byClass.has(a.key)).map((a) => {
+    const c = byClass.get(a.key);
+    const inc = c.closing.minus(c.opening).minus(c.invested).plus(c.returned);
+    const average = c.valueDays.div(days);
+    return { ...a, ...c, income: inc, average, yield: average.isZero() ? null : inc.div(average).times(DAYS_IN_YEAR).div(days) };
+  });
+  // Cash: what's left of income after the holdings (bank charges are external flows, so normally zero).
+  const holdingsIncome = classes.reduce((s, c) => s.plus(c.income), ZERO);
+  classes.push({ key: 'cash', label: CLASS_LABELS.cash, opening: openingCash, closing: closingCash, invested: ZERO, returned: ZERO, income: income.minus(holdingsIncome), average: null, yield: null });
+
+  const counts = {};
+  for (const t of txs) counts[txClass(t, instruments)] = (counts[txClass(t, instruments)] ?? 0) + 1;
+  return { start, end, days, rows: period, openingNav, closingNav, inflows, withdrawals, fees, netFlow, income, twr, annualised, classes, transactions: txs, counts };
+}
+
+/** Holdings open at the end of a date, valued, with their class. */
+export function holdingsOn(data, date) {
+  const inputs = engineInputs(data);
+  const valuer = new Valuer(new FundPriceBook(inputs.fundPrices));
+  const docs = new Map((data.instruments ?? []).map((i) => [i.id, i]));
+  return inputs.instruments
+    .map((i) => ({ inst: docs.get(i.id), value: valuer.valueOn(i, date) }))
+    .filter((x) => !x.value.isZero());
 }
 
 /** Mandate terms in force on a date: the latest version with effectiveFrom <= date. */

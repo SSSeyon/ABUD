@@ -1,7 +1,10 @@
 // Live app state: every collection the screens use, kept in sync with Firestore through onSnapshot.
 import { db, collection, onSnapshot } from './firebase.js';
 
-export const COLLECTIONS = ['transactions', 'instruments', 'mandateTerms', 'funds', 'fundPrices'];
+export const COLLECTIONS = ['transactions', 'instruments', 'mandateTerms', 'funds', 'fundPrices', 'audit'];
+
+/** Collections whose load errors only affect their own screen (the change history needs newer rules). */
+export const OPTIONAL = new Set(['audit']);
 
 export const state = {
   data: {},

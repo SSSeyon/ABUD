@@ -24,13 +24,19 @@ no withdrawal-instruction verification or signatory register. Do not add them ba
 - Every recorded transaction counts (the engine's `approved` flag is always true from the app).
 
 ## Layout
-- `index.html`, `styles.css` app shell. `src/app/main.js` hash router (#/dashboard, #/holdings, #/transactions, #/settings).
+- `index.html`, `styles.css` app shell. `src/app/main.js` hash router (#/dashboard, #/holdings, #/transactions, #/reports, #/history, #/settings).
 - `src/app/firebase.js` Firestore init; `store.js` live onSnapshot state (+ 10 s "stalled" flag);
   `actions.js` every write (one batch); `portfolio.js` Firestore docs -> engine inputs; `ui.js` DOM helpers,
   formatting, modal forms; `views/` one file per screen. Forms live in modals so live re-renders don't wipe input.
 - A deal = an `instruments` doc + its `invest`/`fund_subscription` transaction, written together.
   A `mature`/`fund_redemption` transaction takes the holding off the Holdings list.
 - A `mature` dated before the contract maturity is an early termination: the holding leaves NAV that day.
+- Asset classes: `ASSET_CLASSES` in portfolio.js (fixed order = fixed chart colour `--class-<key>` in styles.css);
+  `call_deposit` is its own type, valued like `fixed_deposit`. `periodReport` drives #/reports.
+- Change history: every write in actions.js goes through `commit`, which also appends an `audit` doc
+  (before/after of each touched doc); #/history lists them with Undo. The audit write is separate so a
+  rules problem never blocks the save itself.
+- Look: MBO Capital crimson (#c4122f) and slate grey; charts are inline SVG in `src/app/charts.js`.
 - `src/engine/` pure calculation engine, no I/O.
 - History import: `data/history-2026-09-30.json` (inception to 30 Sep 2026) is built by
   `tools/history/build-history.ps1` from `tools/history/source.txt` plus the workbook's bank ledger, fee table and
@@ -38,7 +44,8 @@ no withdrawal-instruction verification or signatory register. Do not add them ba
   documents with fixed `hist-` ids (rerunnable); Settings > Import history loads it into an empty database.
 - `tests/` in-browser tests: `tests/harness.js` (describe/it/expect), `tests/engine/*.test.js`, `tests/app/*.test.js`,
   run from `tests/index.html`. Add new test files to its imports.
-- `firestore.rules` open read/write on the five collections with shape validation; `firestore/MODEL.md`.
+- `firestore.rules` open read/write on the app collections with shape validation (audit is append-only); `firestore/MODEL.md`.
+  Rules are published by pasting into the Firebase console; code must keep working before they are.
 - `serve.ps1` local static server (PowerShell, no install).
 
 ## Running tests

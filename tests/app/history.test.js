@@ -1,6 +1,6 @@
 import { describe, expect, it } from '../harness.js';
 import { HISTORY_FILE, historyData, historyDocs, importStatus } from '../../src/app/history.js';
-import { navSeries } from '../../src/app/portfolio.js';
+import { navSeries, periodReport } from '../../src/app/portfolio.js';
 
 // The imported history (inception to 30 Sep 2026), run through the real engine.
 const file = await (await fetch(`../${HISTORY_FILE}`)).json();
@@ -34,6 +34,22 @@ describe('history import (inception to 30 Sep 2026)', () => {
     }
   });
 
+  it('period report: closing NAV matches, and income by asset class adds up to the portfolio income', () => {
+    for (const [start, end] of [['2026-07-01', '2026-09-30'], ['2024-01-01', '2024-12-31'], ['2021-08-11', '2026-09-30']]) {
+      const r = periodReport(data, start, end);
+      expect([end, r.closingNav.toFixed(2)]).toEqual([end, byDate.get(end).nav.toFixed(2)]);
+      const sum = r.classes.reduce((t, c) => t.plus(c.income), r.income.times(0));
+      expect([end, sum.minus(r.income).abs().lt('0.000001')]).toEqual([end, true]);
+      // Opening + flows + income = closing.
+      expect([end, r.openingNav.plus(r.netFlow).plus(r.income).minus(r.closingNav).abs().lt('0.000001')]).toEqual([end, true]);
+    }
+  });
+
+  it('the 14 Coronation calls are call deposits', () => {
+    expect(data.instruments.filter((i) => i.type === 'call_deposit').length).toBe(14);
+    expect(data.instruments.filter((i) => i.type === 'call_deposit').every((i) => i.counterpartyName === 'Coronation Merchant Bank')).toBe(true);
+  });
+
   it('cash never goes negative', () => {
     const low = rows.filter((r) => r.cash.lt(0)).map((r) => r.date);
     expect(low).toEqual([]);
@@ -51,7 +67,7 @@ describe('history import (inception to 30 Sep 2026)', () => {
       const ok =
         d.coll === 'transactions' ? isDate(x.date) && isPositiveMoney(x.amount) && (!['invest', 'mature', 'fund_subscription', 'fund_redemption'].includes(x.type) || typeof x.instrumentId === 'string')
         : d.coll === 'instruments' ? isPositiveMoney(x.cost) && isDate(x.valueDate) && (x.type === 'money_market_fund' ? typeof x.fundId === 'string' : isDate(x.maturityDate) && x.maturityDate > x.valueDate)
-          && (!['ntb', 'commercial_paper'].includes(x.type) || isPositiveMoney(x.faceValue)) && (x.type !== 'fixed_deposit' || isRate(x.rate))
+          && (!['ntb', 'commercial_paper'].includes(x.type) || isPositiveMoney(x.faceValue)) && (!['fixed_deposit', 'call_deposit'].includes(x.type) || isRate(x.rate))
         : d.coll === 'fundPrices' ? isDate(x.date) && isRate(x.priceOrYield) && typeof x.fundId === 'string'
         : typeof x.name === 'string';
       if (!ok) bad.push(`${d.coll}/${d.id}`);

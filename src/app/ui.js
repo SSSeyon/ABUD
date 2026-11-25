@@ -70,6 +70,11 @@ export function parseDecimal(v, label) {
   return dec(s).toFixed();
 }
 
+/** Asset class label with its colour dot (colour from --class-<key>). */
+export function classTag(key, label) {
+  return h('span', { class: 'tag' }, h('span', { class: 'swatch', style: `background:var(--class-${key})` }), label);
+}
+
 export function toast(message, kind = 'ok') {
   const t = h('div', { class: `toast ${kind}`, role: 'status' }, message);
   document.body.append(t);

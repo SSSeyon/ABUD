@@ -1,5 +1,5 @@
 import { describe, expect, it } from '../harness.js';
-import { closedInstrumentIds, engineInputs, expectedMaturityValue, mandateOn, maturityWatch, navSeries, openingTransactions } from '../../src/app/portfolio.js';
+import { closedInstrumentIds, engineInputs, expectedMaturityValue, mandateOn, maturityWatch, navSeries, openingTransactions, txClass } from '../../src/app/portfolio.js';
 
 // Firestore-shaped data: money and rates as strings. No approvals: every entry counts.
 const data = {
@@ -53,6 +53,15 @@ describe('portfolio (Firestore data to engine)', () => {
     // A maturity on (or after) the contract date sets no early close.
     const onTime = { ...data, transactions: [...data.transactions, { id: 't5', type: 'mature', date: '2026-02-02', amount: '40720.00', instrumentId: 'i2' }] };
     expect(engineInputs(onTime).instruments.find((i) => i.id === 'i2').closeDate).toBe(undefined);
+  });
+
+  it('a call deposit values like a fixed deposit and has its own asset class', () => {
+    const asCall = { ...data, instruments: data.instruments.map((i) => (i.id === 'i2' ? { ...i, type: 'call_deposit' } : i)) };
+    expect(navSeries(asCall, '2026-01-07').at(-1).nav.toFixed(2)).toBe('1020096.00');
+    expect(expectedMaturityValue(asCall.instruments[1])).toBe('40720.00');
+    const insts = new Map(asCall.instruments.map((i) => [i.id, i]));
+    expect(txClass(data.transactions[2], insts)).toBe('call_deposit');
+    expect(txClass(data.transactions[0], insts)).toBe('cash');
   });
 
   it('expected maturity value', () => {
