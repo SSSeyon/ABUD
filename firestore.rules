@@ -79,6 +79,17 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // App settings: one 'limits' document holding the alert thresholds and deal limits.
+    match /settings/{id} {
+      allow read: if true;
+      allow write: if id == 'limits'
+        && isMoney(request.resource.data.idleCash)
+        && isRate(request.resource.data.liquidityShare)
+        && isRate(request.resource.data.concentrationShare)
+        && request.resource.data.maxTenorDays.matches('^[0-9]+$')
+        && request.resource.data.idleDays.matches('^[0-9]+$');
+    }
+
     // Everything else is closed.
   }
 }

@@ -1,5 +1,6 @@
-import { FundPriceBook, Valuer, daysBetween, dec } from '../../engine/index.js';
-import { createDeal, saveFundPrice, saveTransaction, updateDeal } from '../actions.js';
+import { addDays, FundPriceBook, Valuer, daysBetween, dec } from '../../engine/index.js';
+import { limitsFrom } from '../alerts.js';
+import { createDeal, rollOverDeal, saveFundPrice, saveTransaction, updateDeal } from '../actions.js';
 import { ASSET_CLASSES, closedInstrumentIds, DEPOSIT_TYPES, engineInputs, expectedMaturityValue, openingTransactions, toEngineInstrument, TYPE_LABELS } from '../portfolio.js';
 import { loadedAll, state } from '../store.js';
 import { classTag, fmtDate, fmtNaira, fmtPct, h, openForm, parseDecimal, parseMoney, parsePercent, table, toast, todayISO } from '../ui.js';
@@ -85,7 +86,62 @@ function actionsFor(i, fund, openingTx) {
       edit,
     );
   }
-  return h('div', { class: 'row-actions' }, h('button', { onclick: () => maturityForm(i) }, 'Record maturity'), edit);
+  return h('div', { class: 'row-actions' },
+    h('button', { class: 'primary', onclick: () => rolloverForm(i, openingTx) }, 'Roll over'),
+    h('button', { onclick: () => maturityForm(i) }, 'Record maturity'), edit);
+}
+
+/** Refuses a tenor above the limit in Settings > Limits. */
+function checkTenor(valueDate, maturityDate) {
+  const max = Number(limitsFrom(state.data).maxTenorDays);
+  const days = daysBetween(valueDate, maturityDate);
+  if (days > max) throw new Error(`Tenor is ${days} days; the limit is ${max} days (Settings → Limits and alerts).`);
+}
+
+/**
+ * Roll a deal over on the same terms: same counterparty, rate (or discount rate) and tenor, starting on the
+ * maturity date, with principal = the maturity proceeds. Every figure can be changed before saving.
+ */
+function rolloverForm(i, openingTx) {
+  const tenor = daysBetween(i.valueDate, i.maturityDate);
+  const proceeds = expectedMaturityValue(i);
+  const isDiscount = DISCOUNT.includes(i.type);
+  openForm({
+    title: 'Roll over on the same terms',
+    intro: `${TYPE_LABELS[i.type]} · ${i.counterpartyName ?? ''} · ${tenor} days. Records the maturity and the new deal together; one Undo in Change history reverses both.`,
+    submitLabel: 'Roll over',
+    fields: [
+      { name: 'date', label: 'Maturity and rollover date', type: 'date', required: true, value: i.maturityDate },
+      { name: 'amount', label: 'Maturity proceeds (₦)', type: 'money', required: true, value: proceeds ?? '', help: 'Principal plus interest (or face value) received.' },
+      { name: 'cost', label: 'New principal (₦)', type: 'money', required: true, value: proceeds ?? '', help: 'Defaults to the full proceeds. Less leaves the rest in cash; more adds cash from the account.' },
+      { name: 'rate', label: 'Interest rate (% p.a.)', type: 'percent', required: true, value: pct(i.rate), showIf: () => DEPOSIT_TYPES.has(i.type) },
+      { name: 'discountRate', label: 'Discount rate (%)', type: 'percent', required: true, value: pct(i.discountRate), showIf: () => isDiscount, help: 'Face value is worked out from this, the principal and the tenor.' },
+      { name: 'tenor', label: 'Tenor (days)', type: 'number', required: true, value: String(tenor) },
+      { name: 'reference', label: 'New deal reference', type: 'text', value: openingTx?.reference ? `${openingTx.reference} (rolled)` : '' },
+      { name: 'notes', label: 'Notes', type: 'textarea', value: `Rollover of ${openingTx?.reference ?? 'the previous deal'}` },
+    ],
+    onSubmit: async (v) => {
+      const amount = parseMoney(v.amount, 'Maturity proceeds');
+      const cost = parseMoney(v.cost, 'New principal');
+      if (!/^\d+$/.test(v.tenor) || Number(v.tenor) < 1) throw new Error('Tenor: enter a whole number of days.');
+      const maturityDate = addDays(v.date, Number(v.tenor));
+      checkTenor(v.date, maturityDate);
+      const next = {
+        type: i.type, counterpartyName: i.counterpartyName, custodianName: i.custodianName,
+        tradeDate: v.date, valueDate: v.date, maturityDate, cost,
+      };
+      if (DEPOSIT_TYPES.has(i.type)) next.rate = parsePercent(v.rate, 'Interest rate');
+      if (isDiscount) {
+        // Discount basis, Actual/365: price = face x (1 - d x t / 365), so face = cost / (1 - d x t / 365).
+        next.discountRate = parsePercent(v.discountRate, 'Discount rate');
+        const factor = dec(1).minus(dec(next.discountRate).times(v.tenor).div(365));
+        if (factor.lte(0)) throw new Error('Discount rate and tenor give no valid price.');
+        next.faceValue = dec(cost).div(factor).toFixed(2);
+      }
+      await rollOverDeal(i, { date: v.date, amount, reference: openingTx?.reference, notes: 'Rolled over' }, next, { reference: v.reference || openingTx?.reference, notes: v.notes });
+      toast(`Rolled over to ${maturityDate}.`);
+    },
+  });
 }
 
 const pct = (fraction) => (fraction ? dec(fraction).times(100).toFixed() : '');
@@ -126,6 +182,7 @@ function dealForm(data, inst, openingTx) {
       if (v.valueDate < v.tradeDate) throw new Error('Value date cannot be before the trade date.');
       if (v.type !== 'money_market_fund') {
         if (v.maturityDate <= v.valueDate) throw new Error('Maturity date must be after the value date.');
+        if (!inst) checkTenor(v.valueDate, v.maturityDate);
         next.maturityDate = v.maturityDate;
       }
       if (DISCOUNT.includes(v.type)) {

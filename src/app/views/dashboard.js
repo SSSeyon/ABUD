@@ -1,94 +1,95 @@
-import { BusinessCalendar, daysBetween, dec, managementFeeForPeriod, quarterOf, timeWeightedReturn } from '../../engine/index.js';
+import { BusinessCalendar, daysBetween, dec, managementFeeForPeriod } from '../../engine/index.js';
+import { computeAlerts, limitsFrom } from '../alerts.js';
 import { allocationBar, lineChart } from '../charts.js';
-import { ASSET_CLASSES, CLASS_LABELS, expectedMaturityValue, holdingsOn, mandateOn, maturityWatch, navSeries, TYPE_LABELS } from '../portfolio.js';
+import { periodPicker, resolvePeriod, sharedPeriod } from '../period.js';
+import { ASSET_CLASSES, CLASS_LABELS, expectedMaturityValue, holdingsOn, mandateOn, maturityWatch, periodReport, TYPE_LABELS } from '../portfolio.js';
 import { loadedAll, state } from '../store.js';
 import { classTag, fmtDate, fmtNaira, fmtPct, h, table, todayISO } from '../ui.js';
 
-const NEEDS = ['transactions', 'instruments', 'fundPrices', 'mandateTerms'];
+const NEEDS = ['transactions', 'instruments', 'fundPrices', 'mandateTerms', 'funds'];
 
-function stat(label, value, note) {
-  return h('div', { class: 'stat' }, h('div', { class: 'stat-label' }, label), h('div', { class: 'stat-value' }, value), note ? h('div', { class: 'stat-note' }, note) : null);
+function stat(label, value, note, tone) {
+  return h('div', { class: `stat ${tone ?? ''}` }, h('div', { class: 'stat-label' }, label), h('div', { class: 'stat-value' }, value), note ? h('div', { class: 'stat-note' }, note) : null);
 }
 
-let navRange = 'year';
+/** Compact alert list, shared with the Alerts screen. */
+export function alertList(alerts, { limit } = {}) {
+  const shown = limit ? alerts.slice(0, limit) : alerts;
+  return h('ul', { class: 'alerts' }, shown.map((a) =>
+    h('li', { class: `alert ${a.level}` },
+      h('span', { class: `alert-level ${a.level}` }, a.level === 'high' ? 'High' : a.level === 'medium' ? 'Medium' : 'Low'),
+      h('div', null, h('a', { class: 'alert-title', href: `#/${a.route}` }, a.title), h('div', { class: 'muted small' }, a.detail)))));
+}
 
 export function dashboardView(rerender) {
   if (!loadedAll(NEEDS)) return h('p', { class: 'muted' }, 'Loading…');
   const data = state.data;
   const today = todayISO();
+  const inception = (data.transactions ?? []).reduce((m, t) => (!m || t.date < m ? t.date : m), '');
 
-  let rows;
+  const head = h('div', { class: 'page-head' },
+    h('div', null, h('h1', null, 'Dashboard'), h('p', { class: 'subtitle' }, `Access Holdings Plc unclaimed dividend portfolio · ${fmtDate(today)}`)),
+    inception ? periodPicker(sharedPeriod, inception, today, rerender) : null);
+  if (!inception) return h('div', null, head, h('div', { class: 'card' }, h('p', null, 'No transactions yet. Record the opening inflow under Transactions.')));
+
+  const period = resolvePeriod(sharedPeriod, inception, today);
+  let r;
   try {
-    rows = navSeries(data, today);
+    r = periodReport(data, period.start, period.end);
   } catch (err) {
-    return h('div', { class: 'card bad' }, h('h2', null, 'NAV could not be calculated'), h('p', null, err.message));
+    return h('div', null, head, h('div', { class: 'card bad' }, h('h2', null, 'NAV could not be calculated'), h('p', null, err.message)));
   }
+  const endRow = r.rows.at(-1);
+  const isToday = period.end === today;
+  const at = isToday ? 'today' : `at ${fmtDate(period.end)}`;
+  const terms = mandateOn(data, period.end);
+  let fee = null;
+  try {
+    fee = terms ? managementFeeForPeriod(r.allRows, period.start, period.end, terms.mgmtFeeRate, new BusinessCalendar()) : null;
+  } catch { fee = null; }
+  const tone = (x) => (x.isNegative() ? 'down' : 'up');
+  const alerts = computeAlerts(data, today, limitsFrom(data));
+  const highs = alerts.filter((a) => a.level === 'high').length;
 
-  const parts = [h('div', { class: 'page-head' }, h('div', null, h('h1', null, 'Dashboard'), h('p', { class: 'subtitle' }, `Access Holdings Plc unclaimed dividend portfolio · ${fmtDate(today)}`)))];
-  if (!rows.length) {
-    parts.push(h('div', { class: 'card' }, h('p', null, 'No transactions yet. Record the opening inflow under Transactions.')));
-  } else {
-    const last = rows[rows.length - 1];
-    const q = quarterOf(today);
-    const qRows = rows.filter((r) => r.date >= q.start);
-    // NAV at the end of the day before the quarter opens the return; none if the portfolio started this quarter.
-    const before = rows.filter((r) => r.date < q.start).at(-1);
-    const arip = timeWeightedReturn(qRows, before ? before.nav : 0);
-    const terms = mandateOn(data, today);
-    const fee = terms ? managementFeeForPeriod(rows, q.start, today, terms.mgmtFeeRate, new BusinessCalendar()) : null;
+  const parts = [head];
+  parts.push(
+    h('div', { class: 'stats' },
+      stat(`NAV ${at}`, fmtNaira(r.closingNav), `Gross of fees · opening ${fmtNaira(r.openingNav)}`),
+      stat(`Cash ${at}`, fmtNaira(endRow?.cash ?? 0)),
+      stat(`Holdings ${at}`, fmtNaira(endRow?.holdingsValue ?? 0)),
+      stat(`Return: ${period.key === 'custom' ? 'period' : period.label.replace(/ \(.*\)$/, '')}`, fmtPct(r.twr, 2), `Time-weighted, gross of fees${r.annualised ? ` · ${fmtPct(r.annualised, 2)} p.a.` : ''}`, tone(r.twr)),
+      stat('Investment income', fmtNaira(r.income), `${r.days} days`, tone(r.income)),
+      stat('Management fee accrued', fee ? fmtNaira(fee.posted) : '—', terms ? `${fmtPct(terms.mgmtFeeRate)} p.a.` : 'Set mandate terms in Settings')),
+  );
 
-    parts.push(
-      h(
-        'div',
-        { class: 'stats' },
-        stat('NAV today', fmtNaira(last.nav), `Gross of fees · ${fmtDate(today)}`),
-        stat('Cash', fmtNaira(last.cash)),
-        stat('Holdings', fmtNaira(last.holdingsValue)),
-        stat(`${q.label} return to date`, fmtPct(arip), 'Time-weighted, gross of fees'),
-        stat(`${q.label} management fee accrued`, fee ? fmtNaira(fee.posted) : '—', terms ? `${fmtPct(terms.mgmtFeeRate)} p.a.` : 'Set mandate terms in Settings'),
-      ),
-    );
+  // Alerts (always as of today, whatever the period).
+  parts.push(h('section', { class: `card alerts-card ${highs ? 'has-high' : ''}` },
+    h('div', { class: 'card-head' }, h('h2', null, `Alerts today${alerts.length ? ` (${alerts.length})` : ''}`), alerts.length > 5 ? h('a', { href: '#/alerts' }, 'See all') : null),
+    alerts.length ? alertList(alerts, { limit: 5 }) : h('p', { class: 'muted' }, 'Nothing needs attention.')));
 
-    // NAV history and where the money is now.
-    const range = navRange === 'all' ? rows : rows.slice(-365);
-    const held = holdingsOn(data, today);
-    const alloc = [
-      ...ASSET_CLASSES.filter((c) => c.key !== 'cash').map((c) => ({ ...c, value: held.filter((x) => x.inst?.type === c.key).reduce((t, x) => t.plus(x.value), dec(0)) })),
-      { key: 'cash', label: CLASS_LABELS.cash, value: last.cash },
-    ];
-    const rangeBtn = (key, label) => h('button', { class: `chip ${navRange === key ? 'active' : ''}`, 'aria-pressed': String(navRange === key), onclick: () => { navRange = key; rerender(); } }, label);
-    parts.push(
-      h('div', { class: 'grid-2' },
-        h('section', { class: 'card' },
-          h('div', { class: 'card-head' }, h('h2', null, 'Net asset value'), h('div', { class: 'chips' }, rangeBtn('year', '12 months'), rangeBtn('all', 'Since inception'))),
-          lineChart(range.map((r) => ({ date: r.date, value: r.nav })), { label: 'NAV' })),
-        h('section', { class: 'card' }, h('h2', null, 'Allocation today'), allocationBar(alloc))),
-    );
-  }
+  const held = holdingsOn(data, period.end);
+  const alloc = [
+    ...ASSET_CLASSES.filter((c) => c.key !== 'cash').map((c) => ({ ...c, value: held.filter((x) => x.inst?.type === c.key).reduce((t, x) => t.plus(x.value), dec(0)) })),
+    { key: 'cash', label: CLASS_LABELS.cash, value: endRow?.cash ?? dec(0) },
+  ];
+  parts.push(
+    h('div', { class: 'grid-2' },
+      h('section', { class: 'card' }, h('h2', null, `Net asset value: ${fmtDate(period.start)} – ${fmtDate(period.end)}`), lineChart(r.rows.map((x) => ({ date: x.date, value: x.nav })), { label: 'NAV' })),
+      h('section', { class: 'card' }, h('h2', null, `Allocation ${at}`), allocationBar(alloc))),
+  );
 
+  // Maturities ahead (always from today).
   const { due, overdue } = maturityWatch(data, today, 14);
   const matRow = (i, late) =>
-    h(
-      'tr',
-      { class: late ? 'bad' : null },
+    h('tr', { class: late ? 'bad' : null },
       h('td', null, fmtDate(i.maturityDate)),
       h('td', null, late ? `${-daysBetween(today, i.maturityDate)} days overdue` : `${daysBetween(today, i.maturityDate)} days`),
       h('td', null, classTag(i.type, TYPE_LABELS[i.type])),
       h('td', null, i.counterpartyName ?? ''),
-      h('td', { class: 'num' }, fmtNaira(expectedMaturityValue(i))),
-    );
-  parts.push(
-    h(
-      'section',
-      { class: 'card' },
-      h('h2', null, 'Maturities: next 14 days'),
-      overdue.length ? h('p', { class: 'bad' }, `${overdue.length} matured with no maturity recorded. Record them under Holdings.`) : null,
-      table(
-        ['Maturity', 'When', 'Instrument', 'Counterparty', { label: 'Expected cash', num: true }],
-        [...overdue.map((i) => matRow(i, true)), ...due.map((i) => matRow(i, false))],
-        'No maturities in the next 14 days.',
-      ),
-    ),
-  );
+      h('td', { class: 'num' }, fmtNaira(expectedMaturityValue(i))));
+  parts.push(h('section', { class: 'card' },
+    h('div', { class: 'card-head' }, h('h2', null, 'Maturities: next 14 days'), h('a', { href: '#/ladder' }, 'Maturity ladder')),
+    table(['Maturity', 'When', 'Instrument', 'Counterparty', { label: 'Expected cash', num: true }],
+      [...overdue.map((i) => matRow(i, true)), ...due.map((i) => matRow(i, false))], 'No maturities in the next 14 days.')));
   return h('div', null, parts);
 }

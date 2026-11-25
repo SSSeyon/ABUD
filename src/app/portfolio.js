@@ -113,7 +113,19 @@ export function engineInputs(data) {
 }
 
 /** Daily NAV rows from the first transaction to asOf. Empty when there are no transactions yet. */
+// Last few NAV series, keyed on the data arrays (replaced whenever Firestore sends a change) and the date.
+const navCache = [];
+
 export function navSeries(data, asOf) {
+  const hit = navCache.find((c) => c.t === data.transactions && c.i === data.instruments && c.p === data.fundPrices && c.asOf === asOf);
+  if (hit) return hit.rows;
+  const rows = computeNavSeries(data, asOf);
+  navCache.unshift({ t: data.transactions, i: data.instruments, p: data.fundPrices, asOf, rows });
+  navCache.length = Math.min(navCache.length, 8);
+  return rows;
+}
+
+function computeNavSeries(data, asOf) {
   const inputs = engineInputs(data);
   const dates = inputs.transactions.map((t) => t.date).sort();
   if (!dates.length || asOf < dates[0]) return [];
@@ -212,7 +224,7 @@ export function periodReport(data, start, end) {
 
   const counts = {};
   for (const t of txs) counts[txClass(t, instruments)] = (counts[txClass(t, instruments)] ?? 0) + 1;
-  return { start, end, days, rows: period, openingNav, closingNav, inflows, withdrawals, fees, netFlow, income, twr, annualised, classes, transactions: txs, counts };
+  return { start, end, days, rows: period, allRows: rows, openingNav, closingNav, inflows, withdrawals, fees, netFlow, income, twr, annualised, classes, transactions: txs, counts };
 }
 
 /** Holdings open at the end of a date, valued, with their class. */

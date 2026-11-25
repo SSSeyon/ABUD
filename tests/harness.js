@@ -47,6 +47,12 @@ export function expect(actual) {
     toHaveLength(n) {
       if (actual?.length !== n) fail(`expected length ${n}, got ${actual?.length}`);
     },
+    toContain(item) {
+      if (!actual?.includes?.(item)) fail(`expected ${fmt(actual)} to contain ${fmt(item)}`);
+    },
+    notToContain(item) {
+      if (actual?.includes?.(item)) fail(`expected ${fmt(actual)} not to contain ${fmt(item)}`);
+    },
     toMatchObject(expected) {
       for (const [k, v] of Object.entries(expected)) {
         if (!deepEqual(actual?.[k], v)) fail(`expected .${k} to be ${fmt(v)}, got ${fmt(actual?.[k])}`);

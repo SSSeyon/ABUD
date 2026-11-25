@@ -2,7 +2,8 @@
 import { historyStatus, restoreChange } from '../actions.js';
 import { TX_LABELS, TYPE_LABELS } from '../portfolio.js';
 import { state } from '../store.js';
-import { confirmDialog, fmtDate, fmtNaira, h, runAction } from '../ui.js';
+import { confirmDialog, fmtDate, fmtNaira, h, runAction, todayISO } from '../ui.js';
+import { periodPicker, resolvePeriod, sharedPeriod } from '../period.js';
 
 const FIELD_LABELS = {
   type: 'Type', date: 'Date', amount: 'Amount', instrumentId: 'Deal', reference: 'Reference', notes: 'Notes',
@@ -52,7 +53,7 @@ function changedSince(entry) {
   });
 }
 
-export function historyView() {
+export function historyView(rerender) {
   const head = h('div', { class: 'page-head' }, h('div', null, h('h1', null, 'Change history'), h('p', { class: 'subtitle' }, 'Every save and delete made in the app, newest first. Undo puts the records back as they were before that change.')));
   if (state.errors.audit || historyStatus.failing) {
     return h('div', null, head, h('div', { class: 'card warn' },
@@ -61,10 +62,21 @@ export function historyView() {
   }
   if (!state.loaded.has('audit')) return h('div', null, head, h('p', { class: 'muted' }, 'Loading…'));
 
-  const entries = [...(state.data.audit ?? [])].sort((a, b) => (b.at?.toMillis?.() ?? Infinity) - (a.at?.toMillis?.() ?? Infinity));
-  if (!entries.length) return h('div', null, head, h('div', { class: 'card' }, h('p', { class: 'muted' }, 'No changes recorded yet. Changes made from now on will appear here.')));
+  const today = todayISO();
+  const inception = (state.data.transactions ?? []).reduce((m, t) => (!m || t.date < m ? t.date : m), '') || today;
+  const period = resolvePeriod(sharedPeriod, inception, today);
+  const lagosDate = (e) => (e.at?.toDate ? e.at.toDate().toLocaleDateString('en-CA', { timeZone: 'Africa/Lagos' }) : today);
+  const all = [...(state.data.audit ?? [])].sort((a, b) => (b.at?.toMillis?.() ?? Infinity) - (a.at?.toMillis?.() ?? Infinity));
+  const entries = all.filter((e) => lagosDate(e) >= period.start && lagosDate(e) <= period.end);
+  head.append(periodPicker(sharedPeriod, inception, today, rerender));
+  if (!entries.length) {
+    return h('div', null, head, h('div', { class: 'card' }, h('p', { class: 'muted' }, all.length
+      ? `No changes between ${fmtDate(period.start)} and ${fmtDate(period.end)}. ${all.length} change${all.length === 1 ? '' : 's'} recorded in other periods.`
+      : 'No changes recorded yet. Changes made from now on will appear here.')));
+  }
 
   return h('div', null, head,
+    h('p', { class: 'muted small' }, `${entries.length} change${entries.length === 1 ? '' : 's'} between ${fmtDate(period.start)} and ${fmtDate(period.end)}.`),
     h('ol', { class: 'timeline' }, entries.slice(0, 300).map((e) => {
       const when = e.at?.toDate?.();
       return h('li', { class: `card entry ${e.kind}` },

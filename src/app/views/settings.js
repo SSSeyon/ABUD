@@ -2,7 +2,8 @@ import { dec } from '../../engine/index.js';
 import { importHistory, saveDoc } from '../actions.js';
 import { HISTORY_FILE, importStatus } from '../history.js';
 import { loadedAll, state } from '../store.js';
-import { confirmDialog, errorText, fmtDate, fmtNaira, fmtPct, h, openForm, parsePercent, table, toast, todayISO } from '../ui.js';
+import { confirmDialog, errorText, fmtDate, fmtNaira, fmtPct, h, openForm, parseMoney, parsePercent, table, toast, todayISO } from '../ui.js';
+import { limitsFrom } from '../alerts.js';
 
 const NEEDS = ['mandateTerms', 'funds'];
 let section = 'mandate';
@@ -18,9 +19,59 @@ export function settingsView(rerender) {
     'div',
     null,
     h('h1', null, 'Settings'),
-    h('div', { class: 'tabs' }, tab('mandate', 'Mandate terms'), tab('funds', 'Funds'), tab('import', 'Import history')),
-    section === 'funds' ? fundsSection() : section === 'import' ? importSection(rerender) : mandateSection(),
+    h('div', { class: 'tabs' }, tab('mandate', 'Mandate terms'), tab('limits', 'Limits and alerts'), tab('funds', 'Funds'), tab('import', 'Import history')),
+    section === 'funds' ? fundsSection() : section === 'import' ? importSection(rerender) : section === 'limits' ? limitsSection() : mandateSection(),
   );
+}
+
+// ---------- limits and alert thresholds ----------
+const LIMIT_FIELDS = [
+  { name: 'idleCash', label: 'Idle cash limit (₦)', kind: 'money', help: 'Alert when uninvested cash stays above this…' },
+  { name: 'idleDays', label: '…for more than this many business days', kind: 'int' },
+  { name: 'maturityWarnDays', label: 'Warn about maturities this many days ahead', kind: 'int' },
+  { name: 'liquidityShare', label: 'Liquidity buffer minimum (% of NAV)', kind: 'pct', help: 'Cash, funds and holdings maturing soon, as a share of NAV.' },
+  { name: 'liquidityDays', label: 'Liquidity horizon (days)', kind: 'int', help: 'Holdings maturing within this many days count as liquid.' },
+  { name: 'concentrationShare', label: 'Counterparty concentration limit (% of NAV)', kind: 'pct' },
+  { name: 'maxTenorDays', label: 'Longest tenor for a new deal (days)', kind: 'int', help: 'New deals longer than this are refused.' },
+];
+
+function limitsSection() {
+  const limits = limitsFrom(state.data);
+  const saved = (state.data.settings ?? []).some((d) => d.id === 'limits');
+  const show = (f) => (f.kind === 'money' ? fmtNaira(limits[f.name]) : f.kind === 'pct' ? fmtPct(limits[f.name], 1) : `${limits[f.name]} days`.replace(/^(\d+) days$/, f.name === 'idleDays' ? '$1 business days' : '$1 days'));
+  return h(
+    'section',
+    { class: 'card' },
+    h('div', { class: 'page-head' }, h('h2', null, 'Limits and alert thresholds'), h('button', { class: 'primary', onclick: () => limitsForm(limits) }, 'Edit limits')),
+    h('p', { class: 'muted' }, saved ? 'Alerts on the Dashboard and Alerts screen use these values.' : 'Defaults from the build plan, not yet saved. Edit to confirm them.'),
+    state.errors.settings ? h('p', { class: 'bad' }, 'Limits cannot be saved until the updated firestore.rules are published.') : null,
+    table(['Limit', { label: 'Value', num: true }], LIMIT_FIELDS.map((f) => h('tr', null, h('td', null, f.label.replace('…', ''), f.help ? h('div', { class: 'muted small' }, f.help) : null), h('td', { class: 'num' }, show(f))))),
+  );
+}
+
+function limitsForm(limits) {
+  openForm({
+    title: 'Limits and alert thresholds',
+    submitLabel: 'Save limits',
+    fields: LIMIT_FIELDS.map((f) => ({
+      name: f.name, label: f.label, help: f.help, required: true,
+      type: f.kind === 'money' ? 'money' : f.kind === 'pct' ? 'percent' : 'number',
+      value: f.kind === 'pct' ? dec(limits[f.name]).times(100).toFixed() : limits[f.name],
+    })),
+    onSubmit: async (v) => {
+      const out = {};
+      for (const f of LIMIT_FIELDS) {
+        if (f.kind === 'money') out[f.name] = parseMoney(v[f.name], f.label);
+        else if (f.kind === 'pct') out[f.name] = parsePercent(v[f.name], f.label);
+        else {
+          if (!/^\d+$/.test(v[f.name]) || Number(v[f.name]) < 1) throw new Error(`${f.label.replace('…', '')}: enter a whole number of days`);
+          out[f.name] = String(Number(v[f.name]));
+        }
+      }
+      await saveDoc('settings', 'limits', out);
+      toast('Limits saved.');
+    },
+  });
 }
 
 // ---------- history import ----------

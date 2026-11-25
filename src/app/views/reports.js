@@ -1,30 +1,18 @@
 // Period report: pick a period, see NAV movement, return, income by asset class, transactions and holdings.
-import { addDays, dec, quarter, quarterOf } from '../../engine/index.js';
+import { addDays, dec } from '../../engine/index.js';
+import { periodPicker, resolvePeriod, sharedPeriod } from '../period.js';
 import { allocationBar, lineChart } from '../charts.js';
 import { ASSET_CLASSES, CLASS_LABELS, holdingsOn, periodReport, txClass, TX_LABELS, TX_SIGN, TYPE_LABELS } from '../portfolio.js';
 import { loadedAll, state } from '../store.js';
 import { classTag, fmtDate, fmtNaira, fmtPct, h, table, todayISO } from '../ui.js';
 
 const NEEDS = ['transactions', 'instruments', 'fundPrices'];
-const sel = { preset: 'lastQuarter', start: '', end: '', cls: '' };
+const sel = { cls: '' };
 
 function firstDate(data) {
   return (data.transactions ?? []).reduce((m, t) => (!m || t.date < m ? t.date : m), '');
 }
 
-function presets(today, inception) {
-  const q = quarterOf(today);
-  const lastQ = q.q === 1 ? quarter(q.year - 1, 4) : quarter(q.year, q.q - 1);
-  const y = Number(today.slice(0, 4));
-  return {
-    thisQuarter: { label: `This quarter (${q.label})`, start: q.start, end: today },
-    lastQuarter: { label: `Last quarter (${lastQ.label})`, start: lastQ.start, end: lastQ.end },
-    ytd: { label: `Year to date (${y})`, start: `${y}-01-01`, end: today },
-    lastYear: { label: `Last year (${y - 1})`, start: `${y - 1}-01-01`, end: `${y - 1}-12-31` },
-    inception: { label: 'Since inception', start: inception, end: today },
-    custom: { label: 'Custom dates' },
-  };
-}
 
 export function reportsView(rerender) {
   if (!loadedAll(NEEDS)) return h('p', { class: 'muted' }, 'Loading…');
@@ -33,24 +21,11 @@ export function reportsView(rerender) {
   const inception = firstDate(data);
   if (!inception) return h('div', null, h('h1', null, 'Reports'), h('div', { class: 'card' }, h('p', null, 'No transactions yet.')));
 
-  const all = presets(today, inception);
-  if (sel.preset !== 'custom') ({ start: sel.start, end: sel.end } = all[sel.preset]);
-  let start = sel.start < inception ? inception : sel.start;
-  const end = sel.end > today ? today : sel.end;
+  const period = resolvePeriod(sharedPeriod, inception, today);
+  const { start, end } = period;
+  const picker = h('div', { class: 'toolbar no-print' }, periodPicker(sharedPeriod, inception, today, rerender), h('button', { onclick: () => window.print() }, 'Print / PDF'));
 
-  const picker = h(
-    'div',
-    { class: 'toolbar period-picker no-print' },
-    h('div', { class: 'chips', role: 'group', 'aria-label': 'Period' },
-      Object.entries(all).map(([key, p]) =>
-        h('button', { class: `chip ${sel.preset === key ? 'active' : ''}`, 'aria-pressed': String(sel.preset === key), onclick: () => { sel.preset = key; if (key === 'custom' && !sel.start) Object.assign(sel, all.lastQuarter); rerender(); } }, p.label))),
-    h('div', { class: 'row-actions' },
-      h('label', { class: 'inline-field' }, 'From', h('input', { type: 'date', value: start, min: inception, max: today, onchange: (e) => { sel.preset = 'custom'; sel.start = e.target.value; rerender(); } })),
-      h('label', { class: 'inline-field' }, 'To', h('input', { type: 'date', value: end, min: inception, max: today, onchange: (e) => { sel.preset = 'custom'; sel.end = e.target.value; rerender(); } })),
-      h('button', { onclick: () => window.print() }, 'Print / PDF')),
-  );
-
-  const head = h('div', { class: 'page-head' }, h('div', null, h('h1', null, 'Portfolio report'), h('p', { class: 'subtitle' }, `Access Holdings Plc unclaimed dividend portfolio · ${fmtDate(start)} to ${fmtDate(end)}`)));
+  const head = h('div', { class: 'page-head' }, h('div', null, h('h1', null, `Portfolio report: ${period.key === 'custom' ? 'custom period' : period.label}`), h('p', { class: 'subtitle' }, `Access Holdings Plc unclaimed dividend portfolio · ${fmtDate(start)} to ${fmtDate(end)}`)));
   if (!start || !end || start > end) return h('div', null, head, picker, h('div', { class: 'card' }, h('p', null, 'Choose a start date on or before the end date.')));
 
   let r;

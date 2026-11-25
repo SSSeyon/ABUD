@@ -102,6 +102,19 @@ export async function updateDeal(instId, inst, openingTx) {
   await commit(`Edited deal with ${inst.counterpartyName ?? ''}`, changes);
 }
 
+/**
+ * Roll a deal over in one step: its maturity, the new deal and the new deal's investment entry, written together
+ * (one change in the history, so one Undo reverses all three).
+ */
+export async function rollOverDeal(old, maturity, next, tx) {
+  const instId = newId('instruments');
+  await commit(`Rolled over ${old.type} with ${old.counterpartyName ?? ''}: ${maturity.amount} into ${next.cost}`, [
+    { coll: 'transactions', id: newId('transactions'), data: clean({ type: 'mature', date: maturity.date, amount: maturity.amount, instrumentId: old.id, reference: maturity.reference, notes: maturity.notes }) },
+    { coll: 'instruments', id: instId, data: clean(next) },
+    { coll: 'transactions', id: newId('transactions'), data: clean({ type: 'invest', date: next.valueDate, amount: next.cost, instrumentId: instId, reference: tx.reference, notes: tx.notes }) },
+  ]);
+}
+
 export async function saveFundPrice(fundId, date, priceOrYield) {
   await commit(`Fund yield or price for ${date}: ${priceOrYield}`, [{ coll: 'fundPrices', id: `${fundId}_${date}`, data: { fundId, date, priceOrYield }, stamp: false }]);
 }
@@ -112,7 +125,7 @@ export async function saveFundPrice(fundId, date, priceOrYield) {
 export async function restoreChange(entry) {
   await commit(
     `Undid: ${entry.summary}`,
-    entry.changes.map((c) => ({ coll: c.coll, id: c.docId, data: c.before, stamp: !['fundPrices', 'mandateTerms', 'funds'].includes(c.coll) })),
+    entry.changes.map((c) => ({ coll: c.coll, id: c.docId, data: c.before, stamp: !['fundPrices', 'mandateTerms', 'funds', 'settings'].includes(c.coll) })),
     { kind: 'restore' },
   );
 }
@@ -146,6 +159,6 @@ export async function reclassifyInstruments(ids, type) {
 /** Create (id null) or replace a settings document. */
 export async function saveDoc(coll, id, data) {
   const docId = id ?? newId(coll);
-  await commit(`${id ? 'Edited' : 'Added'} ${coll === 'mandateTerms' ? 'mandate terms' : 'fund'}`, [{ coll, id: docId, data: clean(data), stamp: false }]);
+  await commit(`${id ? 'Edited' : 'Added'} ${{ mandateTerms: 'mandate terms', funds: 'fund', settings: 'limits' }[coll] ?? coll}`, [{ coll, id: docId, data: clean(data), stamp: false }]);
   return docId;
 }

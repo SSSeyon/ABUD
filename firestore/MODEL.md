@@ -13,6 +13,7 @@ Dates are `"YYYY-MM-DD"` strings. Security rules: [`../firestore.rules`](../fire
 | funds | auto | Money market funds (Clause 11 flag) | name, managerName, pricingBasis (price or yield), isMboManaged |
 | fundPrices | `{fundId}_{date}` | Fund prices, or annual yields as fractions | fundId, date, priceOrYield |
 | audit | auto | Change history, append-only: one doc per save or delete | summary, kind (edit, delete, restore), at, changes [{coll, docId, before, after}] |
+| settings | `limits` | Alert thresholds and deal limits (defaults in src/app/alerts.js until saved) | idleCash, idleDays, maturityWarnDays, liquidityShare, liquidityDays, concentrationShare, maxTenorDays |
 
 Transaction types: inflow, withdrawal, fee_debit, invest, mature, rollover, interest, fund_subscription, fund_redemption.
 Amounts are positive magnitudes; the type gives the direction. A deal is an `instruments` doc plus its `invest`

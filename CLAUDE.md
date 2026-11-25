@@ -24,7 +24,10 @@ no withdrawal-instruction verification or signatory register. Do not add them ba
 - Every recorded transaction counts (the engine's `approved` flag is always true from the app).
 
 ## Layout
-- `index.html`, `styles.css` app shell. `src/app/main.js` hash router (#/dashboard, #/holdings, #/transactions, #/reports, #/history, #/settings).
+- `index.html`, `styles.css` app shell. `src/app/main.js` hash router (#/dashboard, #/alerts, #/holdings, #/ladder, #/transactions, #/reports, #/history, #/settings).
+- Periods: `src/app/period.js` (QTD, YTD, any quarter, since inception, custom); one shared choice across Dashboard, Reports, History.
+- Alerts: `src/app/alerts.js` computes them live from the data and `settings/limits` (plan thresholds as defaults); in-app only, no email job yet. New deals over the tenor limit are refused.
+- Rollover: Holdings → Roll over writes maturity + new deal + its investment entry as one change (same terms, principal = proceeds by default).
 - `src/app/firebase.js` Firestore init; `store.js` live onSnapshot state (+ 10 s "stalled" flag);
   `actions.js` every write (one batch); `portfolio.js` Firestore docs -> engine inputs; `ui.js` DOM helpers,
   formatting, modal forms; `views/` one file per screen. Forms live in modals so live re-renders don't wipe input.
