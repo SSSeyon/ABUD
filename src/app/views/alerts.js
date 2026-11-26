@@ -14,10 +14,7 @@ export function alertsView() {
   const count = (lvl) => alerts.filter((a) => a.level === lvl).length;
   return h('div', null,
     h('div', { class: 'page-head' }, h('div', null, h('h1', null, 'Alerts'), h('p', { class: 'subtitle' }, `As of ${fmtDate(today)}. Each alert clears by itself once it is dealt with.`))),
-    h('div', { class: 'stats' },
-      h('div', { class: 'stat down' }, h('div', { class: 'stat-label' }, 'High'), h('div', { class: 'stat-value' }, String(count('high')))),
-      h('div', { class: 'stat' }, h('div', { class: 'stat-label' }, 'Medium'), h('div', { class: 'stat-value' }, String(count('medium')))),
-      h('div', { class: 'stat' }, h('div', { class: 'stat-label' }, 'Low'), h('div', { class: 'stat-value' }, String(count('low'))))),
+    h('div', { class: 'alert-counts' }, [['high', 'High'], ['medium', 'Medium'], ['low', 'Low']].map(([l, label]) => h('span', { class: `alert-level ${l}` }, `${count(l)} ${label}`))),
     h('section', { class: 'card' }, alerts.length ? alertList(alerts) : h('p', { class: 'muted' }, 'Nothing needs attention.')),
     h('p', { class: 'muted small' },
       `Limits in use: idle cash ${fmtNaira(limits.idleCash)} for over ${limits.idleDays} business days · liquidity ${fmtPct(limits.liquidityShare, 0)} of NAV within ${limits.liquidityDays} days · concentration ${fmtPct(limits.concentrationShare, 0)} of NAV · tenor ${limits.maxTenorDays} days · maturities flagged ${limits.maturityWarnDays} days ahead. Change them in `,

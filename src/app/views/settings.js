@@ -6,6 +6,7 @@ import { HISTORY_FILE, importStatus } from '../history.js';
 import { loadedAll, state } from '../store.js';
 import { confirmDialog, errorText, fmtDate, fmtNaira, fmtPct, h, openForm, parseMoney, parsePercent, table, toast, todayISO } from '../ui.js';
 import { limitsFrom } from '../alerts.js';
+import { feedStatusCard } from './market.js';
 
 const NEEDS = ['mandateTerms', 'funds'];
 let section = 'mandate';
@@ -21,8 +22,8 @@ export function settingsView(rerender) {
     'div',
     null,
     h('h1', null, 'Settings'),
-    h('div', { class: 'tabs' }, tab('mandate', 'Mandate terms'), tab('limits', 'Limits and alerts'), tab('funds', 'Funds'), tab('import', 'Import history'), tab('backup', 'Backup')),
-    section === 'backup' ? backupSection() : section === 'funds' ? fundsSection() : section === 'import' ? importSection(rerender) : section === 'limits' ? limitsSection() : mandateSection(),
+    h('div', { class: 'tabs' }, tab('mandate', 'Mandate terms'), tab('limits', 'Limits and alerts'), tab('funds', 'Funds'), tab('feeds', 'Market feeds'), tab('import', 'Import history'), tab('backup', 'Backup')),
+    section === 'feeds' ? feedStatusCard(state.data) : section === 'backup' ? backupSection() : section === 'funds' ? fundsSection() : section === 'import' ? importSection(rerender) : section === 'limits' ? limitsSection() : mandateSection(),
   );
 }
 

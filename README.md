@@ -27,12 +27,15 @@ Files that matter: `index.html`, `styles.css`, `src/`.
 - **Transactions** for inflows from Access, withdrawals, interest and fee debits. Entries can be edited or deleted.
 - **Dashboard** shows NAV (gross of fees), cash, holdings, quarter-to-date return and fee accrued, money flows (Sankey,
   bar or donut) and maturities due. The bell (top right) lists today's alerts; the sun/moon button switches dark mode.
-- **Holdings**: click a holding for its daily statement (opening, inflows, withdrawals, income, closing).
+- **Holdings**: click a holding for its daily statement (opening, inflows, withdrawals, income, closing); **Actions** on each row has roll over, maturity, part-liquidation and edit.
   **Part-liquidate** on a fixed deposit takes out an amount plus the penalty and rolls the balance to the same maturity.
   **Upload fund statement** reads the money market fund Excel from the platform; the fund is then valued at its balance.
 - **Quarter close → Income payout to Access**: each quarter's income goes to Access; from 2026Q4 net of MBO's fees,
   fixed when the quarter is closed. **Record payout** enters the withdrawal tagged to its quarter.
 - **Reports → Daily NAV**: each day's NAV and the income from every investment, for the chosen period.
+- **Transactions → Bank reconciliation**: upload the bank statement (Excel or CSV). Lines are matched to recorded entries;
+  record the missing ones from the list, check entries the bank doesn't show, and see the day the balances part.
+  **Save reconciliation** keeps a summary (needs the updated `firestore.rules` published).
 
 ## Scheduled jobs (GitHub Actions)
 

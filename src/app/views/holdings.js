@@ -6,8 +6,8 @@ import { openHoldingStatement } from './holdingdetail.js';
 import { openFundUpload } from './fundupload.js';
 import { ASSET_CLASSES, closedInstrumentIds, DEPOSIT_TYPES, engineInputs, expectedMaturityValue, navSeries, openingTransactions, positionsFor, toEngineInstrument, TYPE_LABELS } from '../portfolio.js';
 import { loadedAll, state } from '../store.js';
-import { classTag, excelButton, fmtDate, fmtNaira, fmtPct, h, openForm, parseDecimal, parseMoney, parsePercent, table, toast, todayISO, xDate, xMoney, xPct } from '../ui.js';
-import { counterpartyName, custodianExposure, dealRatingCheck } from '../counterparties.js';
+import { actionMenu, classTag, excelButton, fmtDate, fmtNaira, fmtPct, h, openForm, parseDecimal, parseMoney, parsePercent, table, toast, todayISO, xDate, xMoney, xPct } from '../ui.js';
+import { counterpartyName, dealRatingCheck } from '../counterparties.js';
 
 const DISCOUNT = ['ntb', 'omo', 'commercial_paper'];
 const NEEDS = ['transactions', 'instruments', 'fundPrices', 'funds'];
@@ -123,9 +123,6 @@ export function holdingsView(rerender) {
     filtered ? h('button', { onclick: () => { Object.keys(filt).forEach((k) => { filt[k] = ''; }); rerender(); } }, 'Clear filters') : null,
     excelButton('Download Excel', () => `ABUD holdings ${today}.xlsx`, () => holdingsWorkbook(data, live, valueOf, cpOf, today, showCash ? cash : null)));
 
-  let custodians = [];
-  try { custodians = custodianExposure(data, today); } catch { custodians = []; }
-  const custTotal = custodians.reduce((t, c) => t.plus(c.value), dec(0));
   return h(
     'div',
     null,
@@ -136,15 +133,7 @@ export function holdingsView(rerender) {
       rows,
       filtered ? 'No holdings match these filters.' : 'No holdings yet. Use "New deal" to record an investment.',
     ),
-    h('p', { class: 'muted' }, 'Click a holding for its daily statement. Values are end of day: bills and CPs at amortised cost, deposits with accrued interest, funds at the uploaded statement balance (or else the latest price or accrued yield). Matured and redeemed holdings drop off this list once the maturity or redemption is recorded.'),
-    h('section', { class: 'card' }, h('h2', null, 'Holdings by custodian'),
-      table(['Custodian', { label: 'Holdings', num: true }, { label: 'Value', num: true }, { label: 'Share', num: true }],
-        custodians.map((c) => h('tr', null,
-          h('td', null, h('a', { href: '#/holdings', onclick: (e) => { e.preventDefault(); filt.custodian = c.name; rerender(); } }, c.name)),
-          h('td', { class: 'num' }, String(c.count)), h('td', { class: 'num' }, fmtNaira(c.value)),
-          h('td', { class: 'num' }, custTotal.isZero() ? '—' : fmtPct(c.value.div(custTotal), 1)))),
-        'No holdings.'),
-      h('p', { class: 'muted small' }, 'Custodians come from each deal. Keep the names consistent with the register on the Counterparties screen.')),
+    h('p', { class: 'muted' }, 'Click a holding for its daily statement; Actions has roll over, maturity and the rest. Custodian totals are on Counterparties. Values are end of day: bills and CPs at amortised cost, deposits with accrued interest, funds at the uploaded statement balance (or else the latest price or accrued yield). Matured and redeemed holdings drop off this list once the maturity or redemption is recorded.'),
   );
 }
 
@@ -158,9 +147,9 @@ function idleFundRow(f, data) {
     h('td', null, f.managerName ?? ''),
     h('td', { class: 'num' }, '—'), h('td', { class: 'num' }, '—'), h('td', null, '—'), h('td', null, ''), h('td', null, 'Open'), h('td', { class: 'num' }, ''),
     h('td', { class: 'num' }, fmtNaira(0)),
-    h('td', null, h('div', { class: 'row-actions' },
-      h('button', { class: 'primary', onclick: () => dealForm(state.data, null, null, { type: 'money_market_fund', fundId: f.id, counterpartyName: f.managerName }) }, 'Subscribe'),
-      h('button', { onclick: () => openFundUpload(f.id) }, 'Upload statement'))));
+    h('td', null, actionMenu([
+      { label: 'Subscribe', primary: true, onClick: () => dealForm(state.data, null, null, { type: 'money_market_fund', fundId: f.id, counterpartyName: f.managerName }) },
+      { label: 'Upload statement', onClick: () => openFundUpload(f.id) }])));
 }
 
 /** The uninvested cash balance: one row; click for its daily statement. */
@@ -172,7 +161,7 @@ function cashRow(cash) {
     h('td', null, ''), h('td', { class: 'num' }, '—'), h('td', { class: 'num' }, '—'), h('td', null, '—'),
     h('td', null, ''), h('td', null, 'On call'), h('td', { class: 'num' }, ''),
     h('td', { class: 'num' }, fmtNaira(cash)),
-    h('td', null, h('div', { class: 'row-actions' }, h('button', { onclick: () => openHoldingStatement('cash') }, 'Statement'))));
+    h('td', null, ''));
 }
 
 /** A fund kept on uploaded statements: one row, valued at the statement balance. */
@@ -190,9 +179,9 @@ function accountRow(p, value, statements, today) {
     h('td', null, last ? `${fmtPct(last.rate, 2)} yield` : '—'),
     h('td', null, fmtDate(p.start)), h('td', null, 'Open'), h('td', { class: 'num' }, ''),
     h('td', { class: 'num' }, fmtNaira(value)),
-    h('td', null, h('div', { class: 'row-actions' },
-      h('button', { onclick: () => openHoldingStatement(p.id) }, 'Statement'),
-      h('button', { onclick: () => openFundUpload(p.fundId) }, 'Upload'))));
+    h('td', null, actionMenu([
+      { label: 'Upload statement', primary: true, onClick: () => openFundUpload(p.fundId) },
+      { label: 'Daily statement', onClick: () => openHoldingStatement(p.id) }])));
 }
 
 /**
@@ -262,20 +251,21 @@ function holdingsWorkbook(data, live, valueOf, cpOf, today, cash) {
 }
 
 function actionsFor(i, fund, openingTx) {
-  const edit = h('button', { onclick: () => dealForm(state.data, i, openingTx) }, 'Edit');
+  const edit = { label: 'Edit deal', onClick: () => dealForm(state.data, i, openingTx) };
+  const statement = { label: 'Daily statement', onClick: () => openHoldingStatement(i.id) };
   if (i.type === 'money_market_fund') {
-    return h(
-      'div',
-      { class: 'row-actions' },
-      h('button', { onclick: () => fundPriceForm(fund) }, fund?.pricingBasis === 'yield' ? 'Add yield' : 'Add price'),
-      h('button', { onclick: () => redemptionForm(i) }, 'Redeem'),
-      edit,
-    );
+    return actionMenu([
+      { label: 'Redeem', primary: true, onClick: () => redemptionForm(i) },
+      { label: fund?.pricingBasis === 'yield' ? 'Add yield' : 'Add price', onClick: () => fundPriceForm(fund) },
+      statement, edit,
+    ]);
   }
-  return h('div', { class: 'row-actions' },
-    h('button', { class: 'primary', onclick: () => rolloverForm(i, openingTx) }, 'Roll over'),
-    i.type === 'fixed_deposit' ? h('button', { onclick: () => liquidationForm(i, openingTx) }, 'Part-liquidate') : null,
-    h('button', { onclick: () => maturityForm(i) }, 'Record maturity'), edit);
+  return actionMenu([
+    { label: 'Roll over', primary: true, onClick: () => rolloverForm(i, openingTx) },
+    { label: 'Record maturity', onClick: () => maturityForm(i) },
+    i.type === 'fixed_deposit' ? { label: 'Part-liquidate', onClick: () => liquidationForm(i, openingTx) } : null,
+    statement, edit,
+  ]);
 }
 
 /** Refuses a tenor above the limit in Settings > Limits. */

@@ -2,7 +2,7 @@
 // { app: 'ABUD Portfolio', takenAt: ISO, collections: { name: [{ id, ...fields }] } }. Timestamps become ISO strings.
 
 /** Collections a restore writes back. The change history is append-only, so it is kept in the file but not restored. */
-export const RESTORABLE = ['transactions', 'instruments', 'mandateTerms', 'funds', 'fundPrices', 'settings', 'quarterlyResults', 'auctions', 'mpc', 'cpQuotes', 'feedStatus', 'invoices', 'counterparties', 'ratings', 'limitSets', 'news', 'auctionCalendar'];
+export const RESTORABLE = ['transactions', 'instruments', 'mandateTerms', 'funds', 'fundPrices', 'settings', 'quarterlyResults', 'auctions', 'mpc', 'cpQuotes', 'feedStatus', 'invoices', 'counterparties', 'ratings', 'limitSets', 'news', 'auctionCalendar', 'bankRecs'];
 
 function plain(v) {
   if (v && typeof v.toDate === 'function') return v.toDate().toISOString();

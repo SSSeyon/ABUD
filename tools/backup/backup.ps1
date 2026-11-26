@@ -9,7 +9,7 @@ $ErrorActionPreference = 'Stop'
 $base = 'https://firestore.googleapis.com/v1/projects/abud-24577/databases/(default)/documents'
 $key = 'AIzaSyA_kaAFZtElUvI5kW3OGBAgCIj7_8az0rU'
 $collections = @('transactions', 'instruments', 'mandateTerms', 'funds', 'fundPrices', 'audit', 'settings', 'quarterlyResults',
-  'auctions', 'mpc', 'cpQuotes', 'feedStatus', 'invoices', 'counterparties', 'ratings', 'limitSets', 'news', 'auctionCalendar')
+  'auctions', 'mpc', 'cpQuotes', 'feedStatus', 'invoices', 'counterparties', 'ratings', 'limitSets', 'news', 'auctionCalendar', 'bankRecs')
 
 function Convert-Value($v) {
   $p = $v.PSObject.Properties | Select-Object -First 1

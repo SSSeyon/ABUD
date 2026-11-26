@@ -4,7 +4,7 @@ import { periodPicker, resolvePeriod, sharedPeriod } from '../period.js';
 import { allocationBar, lineChart } from '../charts.js';
 import { ASSET_CLASSES, CLASS_LABELS, holdingsOn, periodReport, txClass, TX_LABELS, TX_SIGN, TYPE_LABELS } from '../portfolio.js';
 import { loadedAll, state } from '../store.js';
-import { classTag, excelButton, fmtDate, fmtNaira, fmtPct, h, table, todayISO, xDate, xMoney, xPct } from '../ui.js';
+import { classTag, excelButton, fmtDate, foldCard, fmtNaira, fmtPct, h, table, todayISO, xDate, xMoney, xPct } from '../ui.js';
 
 const NEEDS = ['transactions', 'instruments', 'fundPrices'];
 const sel = { cls: '' };
@@ -115,11 +115,10 @@ export function reportsView(rerender) {
       h('p', { class: 'muted small' }, 'Income = closing value − opening value − money invested + money returned. Yield is income over the average value held, annualised.'),
       table(['Asset class', { label: 'Opening value', num: true }, { label: 'Invested', num: true }, { label: 'Returned', num: true }, { label: 'Income', num: true }, { label: 'Yield p.a.', num: true }, { label: 'Closing value', num: true }], classRows)),
     h('section', { class: 'card' }, h('h2', null, `Allocation at ${fmtDate(end)}`), allocationBar([...heldByClass, { key: 'cash', label: CLASS_LABELS.cash, value: closingCash }])),
-    h('section', { class: 'card' },
-      h('div', { class: 'page-head' }, h('h2', null, `Transactions (${txs.length})`)),
+    foldCard(`Transactions (${txs.length})`, 'Also on the Transactions screen and in the Excel file',
       h('div', { class: 'chips no-print', role: 'group', 'aria-label': 'Asset class' }, chip('', 'All', r.transactions.length), ASSET_CLASSES.filter((c) => r.counts[c.key]).map((c) => chip(c.key, c.label, r.counts[c.key]))),
       table(['Date', 'Type', 'Asset class', 'Counterparty / reference', { label: 'Cash effect', num: true }], txRows, 'No transactions in this period.')),
-    h('section', { class: 'card' }, h('h2', null, `Holdings at ${fmtDate(end)}`),
+    foldCard(`Holdings at ${fmtDate(end)}`, `${holdRows.length} holdings; also on Holdings and in the Excel file`,
       table(['Instrument', 'Counterparty', { label: 'Cost', num: true }, 'Value date', 'Maturity', { label: 'Value', num: true }], holdRows, 'Nothing held at the end of the period.')),
   );
 }

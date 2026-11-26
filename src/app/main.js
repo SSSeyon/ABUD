@@ -23,6 +23,7 @@ import { managementView } from './views/management.js';
 import { terminationView } from './views/termination.js';
 import { homeView } from './views/home.js';
 import { navDailyView } from './views/navdaily.js';
+import { bankRecView } from './views/bankrec.js';
 
 // Simple line icons (24px grid, drawn with currentColor).
 export const ICONS = {
@@ -47,6 +48,7 @@ const ROUTES = {
   holdings: { label: 'Positions', view: holdingsView },
   ladder: { label: 'Maturity ladder', view: ladderView },
   transactions: { label: 'Transactions', view: transactionsView },
+  bankrec: { label: 'Bank reconciliation', view: bankRecView },
   history: { label: 'Change history', view: historyView },
   market: { label: 'Market', view: marketView },
   counterparties: { label: 'Counterparties', view: counterpartiesView },
@@ -64,7 +66,7 @@ export const SECTIONS = [
   { id: 'dashboard', label: 'Dashboard', desc: 'NAV, return, allocation, maturities', routes: ['dashboard'], color: '#c4122f' },
   { id: 'alerts', label: 'Alerts', desc: 'What needs attention today', routes: ['alerts'], color: '#d97706' },
   { id: 'holdings', label: 'Holdings', desc: 'Positions, deals and the maturity ladder', routes: ['holdings', 'ladder'], color: '#2a78d6' },
-  { id: 'transactions', label: 'Transactions', desc: 'Cash movements and change history', routes: ['transactions', 'history'], color: '#6250d6' },
+  { id: 'transactions', label: 'Transactions', desc: 'Cash movements, bank reconciliation, change history', routes: ['transactions', 'bankrec', 'history'], color: '#6250d6' },
   { id: 'market', label: 'Market', desc: 'Auctions, CP, news, counterparties', routes: ['market', 'counterparties'], color: '#008a5e' },
   { id: 'reports', label: 'Reports', desc: 'Period report, daily NAV make-up, management report', routes: ['reports', 'navdaily', 'management'], color: '#db2777' },
   { id: 'fees', label: 'Fees', desc: 'Quarter close, back-test, termination', routes: ['close', 'backtest', 'termination'], color: '#b45309' },

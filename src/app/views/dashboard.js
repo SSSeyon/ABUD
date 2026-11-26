@@ -1,6 +1,5 @@
 import { BusinessCalendar, daysBetween, dec, managementFeeForPeriod, periodRates, quarterOf } from '../../engine/index.js';
 import { appTerms, auctionYield, benchmarkFor } from '../close.js';
-import { rankOpportunities } from '../market.js';
 import { computeAlerts, limitsFrom } from '../alerts.js';
 import { allocationBar, donut, flowsAs, lineChart, sankey, segmented } from '../charts.js';
 import { periodFlows } from '../flows.js';
@@ -30,6 +29,17 @@ export function alertList(alerts, { limit } = {}) {
     h('li', { class: `alert ${a.level}` },
       h('span', { class: `alert-level ${a.level}` }, a.level === 'high' ? 'High' : a.level === 'medium' ? 'Medium' : 'Low'),
       h('div', null, h('a', { class: 'alert-title', href: `#/${a.route}` }, a.title), h('div', { class: 'muted small' }, a.detail)))));
+}
+
+/** One line: today's alert counts by level and the most pressing one, linking to the Alerts screen. */
+function alertStrip(alerts) {
+  if (!alerts.length) return h('a', { class: 'alert-strip ok', href: '#/alerts' }, h('strong', null, 'No alerts today.'), h('span', { class: 'muted' }, 'Nothing needs attention.'));
+  const n = (lvl) => alerts.filter((a) => a.level === lvl).length;
+  const counts = [['high', 'high'], ['medium', 'medium'], ['low', 'low']].filter(([l]) => n(l)).map(([l, word]) => h('span', { class: `alert-level ${l}` }, `${n(l)} ${word}`));
+  return h('a', { class: `alert-strip ${n('high') ? 'has-high' : ''}`, href: '#/alerts', title: 'Open Alerts' },
+    h('strong', null, `Alerts today (${alerts.length})`), counts,
+    h('span', { class: 'alert-strip-top' }, alerts[0].title),
+    h('span', { class: 'alert-strip-link' }, 'See all →'));
 }
 
 export function dashboardView(rerender) {
@@ -70,7 +80,7 @@ export function dashboardView(rerender) {
     }
   }
   const alerts = computeAlerts(data, today, limitsFrom(data));
-  const highs = alerts.filter((a) => a.level === 'high').length;
+
 
   const parts = [head];
   parts.push(
@@ -83,21 +93,8 @@ export function dashboardView(rerender) {
       stat('Management fee accrued', fee ? fmtNaira(fee.posted) : '—', terms ? `${fmtPct(terms.mgmtFeeRate)} p.a.` : 'Set mandate terms in Settings')),
   );
 
-  // Alerts and the top reinvestment options (always as of today, whatever the period).
-  const opp = rankOpportunities(data, today, limitsFrom(data));
-  const top = opp.ranked.slice(0, 3);
-  parts.push(h('div', { class: 'grid-2' },
-    h('section', { class: `card alerts-card ${highs ? 'has-high' : ''}` },
-      h('div', { class: 'card-head' }, h('h2', null, `Alerts today${alerts.length ? ` (${alerts.length})` : ''}`), alerts.length > 5 ? h('a', { href: '#/alerts' }, 'See all') : null),
-      alerts.length ? alertList(alerts, { limit: 5 }) : h('p', { class: 'muted' }, 'Nothing needs attention.')),
-    h('section', { class: 'card' },
-      h('div', { class: 'card-head' }, h('h2', null, 'Top options for cash'), h('a', { href: '#/market' }, 'Market')),
-      h('p', { class: 'muted small' }, `Cash to deploy ${fmtNaira(opp.cashToDeploy)}${opp.hurdle ? ` · hurdle ${fmtPct(opp.hurdle.hurdle, 2)}` : ''}`),
-      top.length
-        ? h('ol', { class: 'opps' }, top.map((o) => h('li', null,
-            h('div', null, h('strong', null, o.label), h('div', { class: 'muted small' }, `${o.tenorDays} days · ${o.source}`)),
-            h('div', { class: 'num' }, h('strong', null, fmtPct(o.yield, 2)), h('div', { class: 'muted small' }, o.pickup ? `${o.pickup.gte(0) ? '+' : '−'}${o.pickup.abs().times(10000).toFixed(0)} bps vs hurdle` : '')))))
-        : h('p', { class: 'muted' }, 'No options yet. They appear once auction results, confirmed CP quotations or recent bank deals are in.'))));
+  // Alerts as one line (the full list is on Alerts and under the bell); reinvestment options live on Market.
+  parts.push(alertStrip(alerts));
 
   const held = holdingsOn(data, period.end);
   const alloc = [

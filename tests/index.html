@@ -31,6 +31,7 @@
     await import('./app/extras.test.js');
     await import('./app/daily.test.js');
     await import('./app/payout.test.js');
+    await import('./app/bankrec.test.js');
     const { passed, failed, results } = await run();
     window.__testResults = { passed, failed, results };
     summary.textContent = `${passed} passed, ${failed} failed`;

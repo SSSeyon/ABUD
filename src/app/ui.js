@@ -104,8 +104,9 @@ export function errorText(err) {
  * Modal form. fields: [{name, label, type, options, required, value, help, showIf(values)}]
  * types: text, date, money, percent, decimal, number, select, textarea, checkboxes.
  * onSubmit(values) may throw; its message shows in the form. Resolves true when saved.
+ * extra: [{label, danger, onClick}] buttons at the left of the footer (e.g. Delete); the form closes, then onClick runs.
  */
-export function openForm({ title, intro, fields, submitLabel = 'Save', onSubmit, preview }) {
+export function openForm({ title, intro, fields, submitLabel = 'Save', onSubmit, preview, extra = [] }) {
   return new Promise((resolve) => {
     const dialog = h('dialog', { class: 'modal', 'aria-label': title });
     const rows = {};
@@ -183,7 +184,9 @@ export function openForm({ title, intro, fields, submitLabel = 'Save', onSubmit,
       fieldEls,
       previewBox,
       errorBox,
-      h('div', { class: 'actions' }, h('button', { type: 'button', onclick: () => dialog.close() }, 'Cancel'), submit),
+      h('div', { class: 'actions' },
+        extra.map((x) => h('button', { type: 'button', class: `${x.danger ? 'danger' : ''} actions-left`, onclick: () => { dialog.close(); x.onClick(); } }, x.label)),
+        h('button', { type: 'button', onclick: () => dialog.close() }, 'Cancel'), submit),
     );
     form.addEventListener('input', refresh);
     form.addEventListener('change', refresh);
@@ -352,4 +355,48 @@ export function mboMark() {
 }
 export function accessMark() {
   return h('img', { class: 'logo logo-access', src: ACCESS_LOGO, alt: 'Access Holdings' });
+}
+
+/**
+ * "Actions" button that opens a small menu of items [{label, onClick, primary, danger}] (null items skipped).
+ * The menu is fixed-position on the page, so table scrolling cannot clip it; it closes on choice, Escape or a click away.
+ */
+export function actionMenu(items, label = 'Actions') {
+  const list = items.filter(Boolean);
+  const btn = h('button', { type: 'button', class: 'menu-btn', 'aria-haspopup': 'menu', 'aria-expanded': 'false' }, `${label} ▾`);
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    document.querySelector('.action-menu')?.remove();
+    const menu = h('div', { class: 'action-menu', role: 'menu' },
+      list.map((it) => h('button', { type: 'button', role: 'menuitem', class: `${it.primary ? 'primary' : ''} ${it.danger ? 'danger' : ''}`.trim() || null,
+        onclick: (ev) => { ev.stopPropagation(); close(); it.onClick(); } }, it.label)));
+    const close = () => { menu.remove(); btn.setAttribute('aria-expanded', 'false'); document.removeEventListener('click', close); document.removeEventListener('keydown', onKey); window.removeEventListener('scroll', close, true); };
+    const onKey = (ev) => { if (ev.key === 'Escape') { close(); btn.focus(); } };
+    document.body.append(menu);
+    const r = btn.getBoundingClientRect();
+    const w = menu.offsetWidth;
+    const below = r.bottom + 4 + menu.offsetHeight <= window.innerHeight;
+    menu.style.left = `${Math.max(8, Math.min(r.right - w, window.innerWidth - w - 8))}px`;
+    menu.style.top = `${below ? r.bottom + 4 : r.top - 4 - menu.offsetHeight}px`;
+    btn.setAttribute('aria-expanded', 'true');
+    menu.querySelector('button')?.focus();
+    setTimeout(() => { document.addEventListener('click', close); document.addEventListener('keydown', onKey); window.addEventListener('scroll', close, true); });
+  });
+  return btn;
+}
+
+/** Folded state per title, kept while the app is open so a live re-render doesn't close what was opened. */
+const foldOpen = new Map();
+/** A card that starts folded: the title shows, the body opens on click. Opened for printing. */
+export function foldCard(title, note, ...children) {
+  const key = String(title).replace(/\(\d+\)|\d{1,2} \w{3} \d{4}/g, '').trim();
+  const d = h('details', { class: 'card fold', open: foldOpen.get(key) ? true : null },
+    h('summary', null, h('h2', null, title), note ? h('span', { class: 'muted small fold-note' }, note) : null, h('span', { class: 'fold-cue no-print' })),
+    ...children);
+  d.addEventListener('toggle', () => foldOpen.set(key, d.open));
+  return d;
+}
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeprint', () => document.querySelectorAll('details.fold:not([open])').forEach((d) => { d.dataset.printOpened = '1'; d.open = true; }));
+  window.addEventListener('afterprint', () => document.querySelectorAll('details.fold[data-print-opened]').forEach((d) => { delete d.dataset.printOpened; d.open = false; }));
 }

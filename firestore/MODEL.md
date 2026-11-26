@@ -25,13 +25,14 @@ Dates are `"YYYY-MM-DD"` strings. Security rules: [`../firestore.rules`](../fire
 | counterparties | auto | Register of banks, CP issuers, fund managers, custodians | name, kind (bank, issuer, fund_manager, custodian), aliases (comma separated), notes |
 | ratings | auto | Rating history (long-term national scale) | counterpartyId, counterparty, agency, rating, date, outlook, sourceUrl |
 | limitSets | effective date | Dated versions of Settings > Limits; breaches are judged against the version in force | effectiveFrom + the settings/limits fields |
+| bankRecs | statement end date | Saved bank reconciliation summaries (Transactions > Bank reconciliation) | start, end, fileName, lines, matched, bankOnly, appOnly, bankClosing, appClosing, difference, reconciledOn |
 
 Transaction types: inflow, withdrawal, fee_debit, invest, mature, rollover, interest, fund_subscription, fund_redemption.
 Amounts are positive magnitudes; the type gives the direction. A deal is an `instruments` doc plus its `invest`
 (or `fund_subscription`) transaction, written together. Recording a `mature` or `fund_redemption` transaction
 takes the holding off the Holdings list.
 
-Not built yet: dailyNav (NAV is computed live), statements and reconciliation, news items, email digest.
+Not built yet: dailyNav (NAV is computed live).
 
 ## Access
 There is no sign-in, so the rules cannot tell who is reading or writing. They only accept the collections

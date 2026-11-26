@@ -214,7 +214,7 @@ export async function reclassifyInstruments(ids, type) {
 /** Create (id null) or replace a settings document. */
 export async function saveDoc(coll, id, data) {
   const docId = id ?? newId(coll);
-  await commit(`${id ? 'Edited' : 'Added'} ${{ mandateTerms: 'mandate terms', funds: 'fund', settings: 'limits', auctions: 'auction result', mpc: 'MPC decision', cpQuotes: 'CP quotation', invoices: 'billed fees', counterparties: 'counterparty', ratings: 'rating', limitSets: 'limits', auctionCalendar: 'auction date' }[coll] ?? coll}`, [{ coll, id: docId, data: clean(data), stamp: false }]);
+  await commit(`${id ? 'Edited' : 'Added'} ${{ mandateTerms: 'mandate terms', funds: 'fund', settings: 'limits', auctions: 'auction result', mpc: 'MPC decision', cpQuotes: 'CP quotation', invoices: 'billed fees', counterparties: 'counterparty', ratings: 'rating', limitSets: 'limits', auctionCalendar: 'auction date', bankRecs: 'bank reconciliation' }[coll] ?? coll}`, [{ coll, id: docId, data: clean(data), stamp: false }]);
   return docId;
 }
 

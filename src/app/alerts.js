@@ -154,11 +154,25 @@ export function computeAlerts(data, today, limits = limitsFrom(data)) {
     if (feeds.every((f) => f.status === 'never')) {
       alerts.push({ key: 'feeds-never', level: 'low', title: 'Market feeds have not run yet', detail: 'Auction, MPC and CP data come from a scheduled job (see Market). Until it runs, add results by hand.', route: 'market', sort: today });
     } else {
-      for (const f of feeds.filter((x) => x.status === 'stale' || x.status === 'failing')) {
-        alerts.push({ key: `feed-${f.key}`, level: 'medium', title: `Market feed ${f.status === 'failing' ? 'failing' : 'stale'}: ${f.label}`, detail: f.status === 'failing' ? `Last error: ${f.doc?.lastError ?? 'unknown'}. Add data by hand on the Market screen until it is fixed.` : `Last updated ${f.lastOk}. Check the scheduled job, or add data by hand.`, route: 'market', sort: f.lastOk ?? today });
+      // One alert for every feed in trouble; they usually share a cause (the job, or a site blocking it).
+      const bad = feeds.filter((x) => x.status === 'stale' || x.status === 'failing');
+      if (bad.length) {
+        const errors = [...new Set(bad.map((f) => f.doc?.lastError).filter(Boolean))];
+        alerts.push({ key: `feeds-${bad.map((f) => `${f.key}:${f.status}`).join(',')}`, level: 'medium',
+          title: bad.length === 1 ? `Market feed ${bad[0].status === 'failing' ? 'failing' : 'stale'}: ${bad[0].label}` : `Market feeds not updating (${bad.length})`,
+          detail: `${bad.map((f) => `${f.label} (${f.status === 'failing' ? 'failing' : `stale since ${f.lastOk}`})`).join(', ')}.${errors.length === 1 ? ` Last error: ${errors[0]}.` : ''} Add data by hand on the Market screen meanwhile; details in Settings > Market feeds.`,
+          route: 'settings', sort: bad.map((f) => f.lastOk ?? today).sort()[0] });
       }
     }
-    for (const e of marketEvents(data, today)) alerts.push({ key: e.key, level: 'low', title: e.title, detail: e.detail, route: 'market', sort: e.date });
+    // Market news (auction moves, new CP) stays on Market's notable events; only an MPR change is raised here.
+    for (const e of marketEvents(data, today).filter((x) => x.key.startsWith('mpc-'))) alerts.push({ key: e.key, level: 'low', title: e.title, detail: e.detail, route: 'market', sort: e.date });
+  }
+
+  // Bank reconciliation: a reminder when the last saved one is over five weeks old (once the collection has loaded).
+  if (Array.isArray(data.bankRecs) && (data.transactions ?? []).length) {
+    const last = data.bankRecs.reduce((m, x) => (x.end && (!m || x.end > m) ? x.end : m), '');
+    if (!last) alerts.push({ key: 'bankrec-never', level: 'low', title: 'Bank statement not reconciled yet', detail: 'Upload the bank statement under Transactions > Bank reconciliation to check every cash movement and the balance.', route: 'bankrec', sort: today });
+    else if (daysBetween(last, today) > 35) alerts.push({ key: `bankrec-${last}`, level: 'medium', title: `Bank not reconciled since ${last}`, detail: 'Upload the latest bank statement under Transactions > Bank reconciliation and save the result.', route: 'bankrec', sort: last });
   }
 
   // Counterparty ratings (once the register has loaded).

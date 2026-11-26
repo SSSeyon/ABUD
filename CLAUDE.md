@@ -45,7 +45,7 @@ no withdrawal-instruction verification or signatory register. Do not add them ba
 - Numbers on screen are whole naira (`fmtNaira` rounds half up; `fmtCompact` for chart labels, e.g. ₦4,152m); only
   percentages keep decimals. Excel cells keep the full value with a `#,##0` format. Stat tiles shrink their figure
   with the tile (container query) so nothing overflows.
-- `index.html`, `styles.css` app shell. `src/app/main.js` hash router (#/home, #/dashboard, #/alerts, #/holdings, #/ladder, #/transactions, #/counterparties, #/market, #/reports, #/navdaily, #/management, #/close, #/backtest, #/termination, #/history, #/settings).
+- `index.html`, `styles.css` app shell. `src/app/main.js` hash router (#/home, #/dashboard, #/alerts, #/holdings, #/ladder, #/transactions, #/bankrec, #/counterparties, #/market, #/reports, #/navdaily, #/management, #/close, #/backtest, #/termination, #/history, #/settings).
 - Positions (`positionsFor` in portfolio.js): every deal, plus one account per money market fund on an uploaded statement.
   `holdingsOn` and `periodReport` value through them. `daily.js`: `dailyBreakdown` (per position per day: open, in,
   out, income, close; income = close − open − in + out, so incomes + external flows = the NAV change) and
@@ -69,7 +69,20 @@ no withdrawal-instruction verification or signatory register. Do not add them ba
   `quarter`; recorded from the Quarter close card or tagged on the Transactions form. Alert while one is outstanding;
   the fee computation document shows the income payable.
 - Periods: `src/app/period.js` (QTD, YTD, any quarter, since inception, custom); one shared choice across Dashboard, Reports, History.
-- Alerts: `src/app/alerts.js` computes them live from the data and the limits in force (`limitsFrom(data, date)`: latest
+- Keeping screens light (review 26 Nov 2026): Dashboard = stat tiles, a one-line alert strip, NAV, allocation, flows,
+  maturities (no alert list or options: those are on Alerts and Market). Transactions follow the shared period, 50 rows
+  a page, search; a row opens its entry (Edit / Delete in the form, `openForm({extra})`). Holdings rows carry one
+  `actionMenu` (ui.js) instead of several buttons; custodian totals live on Counterparties only. Market is four tabs
+  (Opportunities, Rates, Commercial paper, News); feed status is Settings > Market feeds (`feedStatusCard`). Long
+  tables that repeat another screen sit in a `foldCard` (ui.js; opened for printing). Prefer these over adding cards.
+- Bank reconciliation (#/bankrec, Transactions section): `src/app/bankrec.js` `parseBankStatement` (Date or Value
+  Date, Debit + Credit or a signed Amount, Narration, Balance; newest-first files reordered) and `reconcile` (same
+  direction, within ₦1, dates up to N days apart, closest first; same-day maturity + reinvestment pairs the bank
+  netted; bank balance against `navSeries` cash day by day, listing only days the difference changes). Unmatched bank
+  lines open the entry form pre-filled (`transactionForm(data, null, preset)`, type guessed by `suggestType`).
+  "Save reconciliation" writes a summary to `bankRecs/{end date}`; an alert fires 35 days after the last one.
+- Alerts: `src/app/alerts.js` computes them live (one alert for all failing feeds; auction moves and new CP stay on
+  Market, only MPR changes alert) from the data and the limits in force (`limitsFrom(data, date)`: latest
   `limitSets/{effectiveFrom}` version, else `settings/limits`, else plan defaults). New deals over the tenor limit or with
   a counterparty rated below `minRating` are refused (FGN bills exempt). Email: `digest.html` + `src/app/digest.js`
   (`buildDigest`), rendered in headless Chrome by `tools/digest/send-digest.ps1` in `.github/workflows/daily-digest.yml`

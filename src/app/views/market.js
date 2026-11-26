@@ -1,5 +1,6 @@
-// Market: ranked reinvestment options, notable events, NTB/OMO auctions, MPC decisions, CP quotations and the
-// status of the scheduled feeds. Every feed has a manual form for when the source page changes.
+// Market, in four tabs: Opportunities (ranked reinvestment options, notable events, auction calendar), Rates (NTB and
+// OMO auctions, MPC decisions), Commercial paper and News. Feed status lives in Settings > Market feeds.
+// Every feed has a manual form for when the source page changes.
 import { dec } from '../../engine/index.js';
 import { deleteDoc, saveDoc } from '../actions.js';
 import { limitsFrom } from '../alerts.js';
@@ -14,6 +15,8 @@ const pctOrDash = (x, dp = 2) => (x == null ? '—' : fmtPct(x, dp));
 
 const CP_KINDS = { issue: 'Issue (news)', quotation: 'FMDQ quotation', programme: 'Programme', redemption: 'Redemption' };
 const cpFilt = { q: '', kind: '', status: '', source: '', limit: 25 };
+const TABS = [['options', 'Opportunities'], ['rates', 'Rates'], ['cp', 'Commercial paper'], ['news', 'News']];
+let tab = 'options';
 
 export function marketView(rerender) {
   if (!loadedAll(NEEDS)) return h('p', { class: 'muted' }, 'Loading…');
@@ -24,20 +27,27 @@ export function marketView(rerender) {
   const opp = rankOpportunities(data, today, limits);
   const mpc = mpcHistory(data);
   const cpi = (data.feedStatus ?? []).find((d) => d.id === 'cbn_cpi');
+  const failing = feedHealth(data, today).filter((f) => f.status === 'failing' || f.status === 'stale');
 
   const kpi = (label, value, note) => h('div', { class: 'stat' }, h('div', { class: 'stat-label' }, label), h('div', { class: 'stat-value' }, value), note ? h('div', { class: 'stat-note' }, note) : null);
-  const parts = [
+  const tabBtn = ([key, label]) => h('button', { class: `tab ${tab === key ? 'active' : ''}`, 'aria-pressed': String(tab === key), onclick: () => { tab = key; rerender(); } }, label);
+  const body = { options: optionsTab, rates: ratesTab, cp: cpTab, news: newsTab }[tab] ?? optionsTab;
+  return h('div', null,
     h('div', { class: 'page-head' }, h('div', null, h('h1', null, 'Market'), h('p', { class: 'subtitle' }, 'Public market data and ranked reinvestment options. Nothing from the portfolio leaves the app.'))),
-  ];
-  if (missing.length) parts.push(h('div', { class: 'card warn' }, h('p', null, 'Market data needs the updated Firestore rules (publish firestore.rules). Until then nothing here can load or be saved.')));
-  parts.push(h('div', { class: 'stats' },
-    kpi('Cash to deploy', fmtNaira(opp.cashToDeploy), `Cash above the ${fmtNaira(limits.idleCash)} idle limit`),
-    kpi('Hurdle now', opp.hurdle ? fmtPct(opp.hurdle.hurdle, 2) : '—', opp.hurdle ? `91-day true yield ${fmtPct(opp.hurdle.trueYield, 2)} (${fmtDate(opp.hurdle.auction.date)}) + ${fmtPct(opp.hurdle.spread, 2)}` : 'No 91-day auction stored'),
-    kpi('Portfolio running yield', pctOrDash(opp.running), 'Value-weighted, holdings today'),
-    kpi('MPR', mpc[0] ? fmtPct(mpc[0].mpr, 2) : '—', mpc[0] ? `MPC ${fmtDate(mpc[0].date)}${mpc[0].changeBps ? ` · ${bps(mpc[0].changeBps)}` : ''}` : 'No decision stored'),
-    kpi('Headline inflation', cpi?.value ? fmtPct(cpi.value, 2) : '—', cpi?.lastSuccessAt ? `CBN, as of ${fmtDate(cpi.lastSuccessAt.slice(0, 10))}` : 'Year on year')));
+    missing.length ? h('div', { class: 'card warn' }, h('p', null, 'Market data needs the updated Firestore rules (publish firestore.rules). Until then nothing here can load or be saved.')) : null,
+    failing.length ? h('p', { class: 'muted small' }, `${failing.length} market feed${failing.length > 1 ? 's' : ''} not updating; see Settings > Market feeds. Add data by hand meanwhile.`) : null,
+    h('div', { class: 'stats' },
+      kpi('Cash to deploy', fmtNaira(opp.cashToDeploy), `Cash above the ${fmtNaira(limits.idleCash)} idle limit`),
+      kpi('Hurdle now', opp.hurdle ? fmtPct(opp.hurdle.hurdle, 2) : '—', opp.hurdle ? `91-day true yield ${fmtPct(opp.hurdle.trueYield, 2)} (${fmtDate(opp.hurdle.auction.date)}) + ${fmtPct(opp.hurdle.spread, 2)}` : 'No 91-day auction stored'),
+      kpi('Portfolio running yield', pctOrDash(opp.running), 'Value-weighted, holdings today'),
+      kpi('MPR', mpc[0] ? fmtPct(mpc[0].mpr, 2) : '—', mpc[0] ? `MPC ${fmtDate(mpc[0].date)}${mpc[0].changeBps ? ` · ${bps(mpc[0].changeBps)}` : ''}` : 'No decision stored'),
+      kpi('Headline inflation', cpi?.value ? fmtPct(cpi.value, 2) : '—', cpi?.lastSuccessAt ? `CBN, as of ${fmtDate(cpi.lastSuccessAt.slice(0, 10))}` : 'Year on year')),
+    h('div', { class: 'tabs' }, TABS.map(tabBtn)),
+    body(data, today, rerender, { limits, opp, mpc }));
+}
 
-  // Opportunities.
+/** Opportunities: ranked options, then notable events beside the auction calendar. */
+function optionsTab(data, today, rerender, { limits, opp }) {
   const oppRows = opp.ranked.map((o, i) => h('tr', null,
     h('td', { class: 'num' }, String(i + 1)),
     h('td', { style: 'min-width:200px' }, o.label, h('div', { class: 'muted small' }, o.source)),
@@ -47,21 +57,34 @@ export function marketView(rerender) {
     h('td', { class: `num ${o.overRunning?.isNegative() ? 'neg' : ''}` }, o.overRunning == null ? '—' : bps(o.overRunning.times(10000))),
     h('td', { class: 'num' }, fmtNaira(o.amount), o.notes.length ? h('div', { class: 'muted small' }, o.notes.join('; ')) : null),
     h('td', { class: 'num' }, o.headroom == null ? 'FGN' : fmtNaira(o.headroom))));
-  parts.push(h('section', { class: 'card' },
+  const optionsCard = h('section', { class: 'card' },
     h('div', { class: 'card-head' }, h('h2', null, 'Reinvestment options')),
     table(['#', 'Option', { label: 'Tenor (days)', num: true }, { label: 'Yield', num: true }, { label: 'Over hurdle', num: true }, { label: 'Over portfolio', num: true }, { label: 'Suggested amount', num: true }, { label: 'Limit headroom', num: true }], oppRows,
       'No options yet: they come from recent auctions, confirmed CP quotations and the last 90 days of bank deals.'),
     opp.rejected.length ? h('details', null, h('summary', { class: 'muted small' }, `${opp.rejected.length} excluded by limits`),
       h('ul', { class: 'small' }, opp.rejected.map((o) => h('li', null, `${o.label} (${fmtPct(o.yield, 2)}, ${o.tenorDays} days): ${o.reason}`)))) : null,
-    h('p', { class: 'muted small' }, `Ranked by yield over the hurdle, then over the portfolio's running yield. Amounts keep within the ${fmtPct(limits.concentrationShare, 0)} counterparty limit (FGN paper exempt) and the ${fmtPct(limits.liquidityShare, 0)} liquidity buffer for anything over ${limits.liquidityDays} days. Bank deposit rates are indicative, from your last deal with each bank. Yields are simple annual (Actual/365); bills and CPs as true yield.`)));
+    h('p', { class: 'muted small' }, `Ranked by yield over the hurdle, then over the portfolio's running yield. Amounts keep within the ${fmtPct(limits.concentrationShare, 0)} counterparty limit (FGN paper exempt) and the ${fmtPct(limits.liquidityShare, 0)} liquidity buffer for anything over ${limits.liquidityDays} days. Bank deposit rates are indicative, from your last deal with each bank. Yields are simple annual (Actual/365); bills and CPs as true yield.`));
 
-  // Events.
   const events = marketEvents(data, today);
-  parts.push(h('section', { class: 'card' }, h('h2', null, 'Notable events (last 14 days)'),
+  const eventsCard = h('section', { class: 'card' }, h('h2', null, 'Notable events (last 14 days)'),
     events.length ? h('ul', { class: 'alerts' }, events.map((e) => h('li', { class: 'alert low' }, h('span', { class: 'muted small' }, fmtDate(e.date)), h('div', null, h('div', { class: 'alert-title' }, e.title), h('div', { class: 'muted small' }, e.detail)))))
-      : h('p', { class: 'muted' }, 'No NTB moves over 25 bps, new CP quotations or MPR changes.')));
+      : h('p', { class: 'muted' }, 'No NTB moves over 25 bps, new CP quotations or MPR changes.'));
 
-  // Auctions.
+  const upcoming = upcomingAuctions(data, today);
+  const KIND = { ntb: 'NTB', omo: 'OMO', fgn_bond: 'FGN bond' };
+  const calendarCard = h('section', { class: 'card' },
+    h('div', { class: 'card-head' }, h('h2', null, 'Upcoming auctions (45 days)'), h('button', { onclick: () => calendarForm() }, 'Add date')),
+    table(['Date', 'Auction', 'Notes', ''], upcoming.map((u) => h('tr', null,
+      h('td', null, fmtDate(u.date)), h('td', null, KIND[u.kind] ?? u.kind),
+      h('td', { class: u.projected ? 'muted small' : null }, u.label),
+      h('td', null, u.doc ? h('button', { class: 'danger', onclick: (e) => runAction(e.currentTarget, () => deleteDoc('auctionCalendar', u.doc.id, `Removed ${KIND[u.kind]} auction date ${u.date}`), 'Removed') }, 'Remove') : null))),
+    'No auction dates known. Add them from the CBN or DMO calendar.'),
+    h('p', { class: 'muted small' }, 'Projected dates follow the recent auction cycle. Entered dates (from the CBN NTB calendar or DMO bond calendar) replace the projection for that market.'));
+  return h('div', null, optionsCard, h('div', { class: 'grid-2' }, eventsCard, calendarCard));
+}
+
+/** Rates: latest NTB and OMO auctions by tenor, and MPC decisions. */
+function ratesTab(data, today, rerender, { mpc }) {
   const auctionCard = (kind, title) => {
     const rows = latestByTenor(data, kind).map((l) => h('tr', null,
       h('td', null, fmtDate(l.auction.date)), h('td', { class: 'num' }, String(l.auction.tenorDays)),
@@ -76,17 +99,18 @@ export function marketView(rerender) {
       table(['Latest auction', { label: 'Tenor', num: true }, { label: 'Stop rate', num: true }, { label: 'True yield', num: true }, { label: 'Change', num: true }, { label: 'Offered', num: true }, { label: 'Subscribed', num: true }, 'Source'], rows, 'No auction results stored.'),
       h('p', { class: 'muted small' }, `${count} results stored. Change is the stop rate against the previous auction ${kind === 'omo' ? 'in the same band (up to 3, 6 or 12 months)' : 'at the same tenor'}.`));
   };
-  parts.push(h('div', { class: 'grid-2' }, auctionCard('ntb', 'NTB primary auctions'), auctionCard('omo', 'OMO auctions')));
-
-  // MPC.
   const mpcRows = mpc.slice(0, 8).map((m) => h('tr', null,
     h('td', null, fmtDate(m.date)), h('td', { class: 'num' }, fmtPct(m.mpr, 2)), h('td', { class: 'num' }, bps(m.changeBps)), h('td', null, m.corridor ?? ''),
     h('td', null, m.sourceUrl ? h('a', { href: m.sourceUrl, target: '_blank', rel: 'noopener' }, 'Communiqué') : '', ' ', h('button', { class: 'link', onclick: () => mpcForm(m) }, 'Edit'))));
-  parts.push(h('section', { class: 'card' },
-    h('div', { class: 'card-head' }, h('h2', null, 'MPC decisions'), h('button', { onclick: () => mpcForm() }, 'Add decision')),
-    table(['Meeting', { label: 'MPR', num: true }, { label: 'Change', num: true }, 'Corridor', ''], mpcRows, 'No MPC decisions stored.')));
+  return h('div', null,
+    h('div', { class: 'grid-2' }, auctionCard('ntb', 'NTB primary auctions'), auctionCard('omo', 'OMO auctions')),
+    h('section', { class: 'card' },
+      h('div', { class: 'card-head' }, h('h2', null, 'MPC decisions'), h('button', { onclick: () => mpcForm() }, 'Add decision')),
+      table(['Meeting', { label: 'MPR', num: true }, { label: 'Change', num: true }, 'Corridor', ''], mpcRows, 'No MPC decisions stored.')));
+}
 
-  // CP quotations.
+/** Commercial paper: every entry from the feed or entered, with filters. */
+function cpTab(data, today, rerender) {
   const allQuotes = [...(data.cpQuotes ?? [])].sort((a, b) => (a.date < b.date ? 1 : -1));
   const kindOf = (q) => q.kind ?? (q.source === 'FMDQ' ? 'quotation' : 'issue');
   const matching = allQuotes.filter((q) => (!cpFilt.kind || kindOf(q) === cpFilt.kind)
@@ -113,42 +137,34 @@ export function marketView(rerender) {
     h('td', null, q.confirmed ? h('span', { class: 'badge ok' }, 'Confirmed') : h('span', { class: 'badge warn' }, 'Needs details')),
     h('td', null, h('button', { class: 'link', onclick: () => cpForm(q) }, q.confirmed ? 'Edit' : 'Confirm'), ' ',
       h('button', { class: 'link', onclick: (e) => confirmDialog({ title: 'Delete this quotation?', message: q.title || q.issuer, confirmLabel: 'Delete', danger: true }).then((ok) => ok && runAction(e.target, () => deleteDoc('cpQuotes', q.id, `Deleted CP quotation ${q.issuer || q.title}`), 'Deleted')) }, 'Delete'))));
-  parts.push(h('section', { class: 'card' },
+  return h('section', { class: 'card' },
     h('div', { class: 'card-head' }, h('h2', null, 'Commercial paper'), h('button', { onclick: () => cpForm() }, 'Add quotation')),
     cpToolbar,
     table(['Date', 'Issuer', { label: 'Size', num: true }, { label: 'Tenor', num: true }, { label: 'Yield', num: true }, 'Rating', 'Status', ''], cpRows, allQuotes.length ? 'Nothing matches these filters.' : 'No CP entries stored.'),
     matching.length > quotes.length ? h('button', { onclick: () => { cpFilt.limit += 50; rerender(); } }, `Show more (${matching.length - quotes.length} left)`) : null,
-    h('p', { class: 'muted small' }, `${matching.length} of ${allQuotes.length} shown by the filters. The feed reads FMDQ's commercial paper posts (quotations and programme registrations) and Nairametrics and BusinessDay articles with commercial paper in the headline, two years back; size, yield and tenor are read from the headline when it gives them. Confirm the yield, tenor and rating from the issue documents before a CP counts as an option.`)));
+    h('p', { class: 'muted small' }, `${matching.length} of ${allQuotes.length} shown by the filters. The feed reads FMDQ's commercial paper posts (quotations and programme registrations) and Nairametrics and BusinessDay articles with commercial paper in the headline, two years back; size, yield and tenor are read from the headline when it gives them. Confirm the yield, tenor and rating from the issue documents before a CP counts as an option.`));
+}
 
-  // Feeds.
+/** News: money-market stories and CBN circulars. */
+function newsTab(data) {
+  const news = latestNews(data);
+  return h('section', { class: 'card' }, h('h2', null, 'Market news'),
+    news.length
+      ? h('ul', { class: 'news' }, news.map((n) => h('li', null, h('a', { href: n.url, target: '_blank', rel: 'noopener' }, n.title), h('div', { class: 'muted small' }, `${n.source} · ${fmtDate(n.date)}`))))
+      : h('p', { class: 'muted' }, state.errors.news ? 'News needs the updated Firestore rules.' : 'No news yet: the feed job adds money-market stories (Nairametrics, BusinessDay) and CBN circulars.'));
+}
+
+/** Feed status table, shown in Settings > Market feeds. */
+export function feedStatusCard(data, today = todayISO()) {
   const feedRows = feedHealth(data, today).map((f) => h('tr', null,
     h('td', null, f.label),
     h('td', null, h('span', { class: `badge ${f.status === 'ok' ? 'ok' : f.status === 'never' ? '' : 'warn'}` }, { ok: 'Up to date', stale: 'Stale', failing: 'Failing', never: 'Not run yet' }[f.status])),
     h('td', null, f.doc?.lastSuccessAt ? fmtDate(f.doc.lastSuccessAt.slice(0, 10)) : '—'),
     h('td', { class: 'num' }, f.doc?.added ?? '—'),
     h('td', { class: 'small' }, f.status === 'failing' ? f.doc?.lastError ?? '' : '')));
-  // Upcoming auctions and news.
-  const upcoming = upcomingAuctions(data, today);
-  const KIND = { ntb: 'NTB', omo: 'OMO', fgn_bond: 'FGN bond' };
-  const news = latestNews(data);
-  parts.push(h('div', { class: 'grid-2' },
-    h('section', { class: 'card' },
-      h('div', { class: 'card-head' }, h('h2', null, 'Upcoming auctions (45 days)'), h('button', { onclick: () => calendarForm() }, 'Add date')),
-      table(['Date', 'Auction', 'Notes', ''], upcoming.map((u) => h('tr', null,
-        h('td', null, fmtDate(u.date)), h('td', null, KIND[u.kind] ?? u.kind),
-        h('td', { class: u.projected ? 'muted small' : null }, u.label),
-        h('td', null, u.doc ? h('button', { class: 'danger', onclick: (e) => runAction(e.currentTarget, () => deleteDoc('auctionCalendar', u.doc.id, `Removed ${KIND[u.kind]} auction date ${u.date}`), 'Removed') }, 'Remove') : null))),
-      'No auction dates known. Add them from the CBN or DMO calendar.'),
-      h('p', { class: 'muted small' }, 'Projected dates follow the recent auction cycle. Entered dates (from the CBN NTB calendar or DMO bond calendar) replace the projection for that market.')),
-    h('section', { class: 'card' }, h('h2', null, 'Market news'),
-      news.length
-        ? h('ul', { class: 'news' }, news.map((n) => h('li', null, h('a', { href: n.url, target: '_blank', rel: 'noopener' }, n.title), h('div', { class: 'muted small' }, `${n.source} · ${fmtDate(n.date)}`))))
-        : h('p', { class: 'muted' }, state.errors.news ? 'News needs the updated Firestore rules.' : 'No news yet: the feed job adds money-market stories (Nairametrics, BusinessDay) and CBN circulars.'))));
-
-  parts.push(h('section', { class: 'card' }, h('h2', null, 'Feed status'),
+  return h('section', { class: 'card' }, h('h2', null, 'Market feeds'),
     table(['Feed', 'Status', 'Last success', { label: 'Added last run', num: true }, 'Last error'], feedRows),
-    h('p', { class: 'muted small' }, 'A GitHub Actions job ("Market feeds", tools/feeds/fetch-feeds.ps1) reads the CBN and FMDQ sites twice each weekday and adds anything new. It can also be run by hand from the repository\'s Actions tab. Bank deposit rates are not captured.')));
-  return h('div', null, parts);
+    h('p', { class: 'muted small' }, 'A GitHub Actions job ("Market feeds", tools/feeds/fetch-feeds.ps1) reads the CBN and FMDQ sites twice each weekday and adds anything new. It can also be run by hand from the repository\'s Actions tab. Bank deposit rates are not captured.'));
 }
 
 // ---------- forms ----------

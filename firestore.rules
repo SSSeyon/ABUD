@@ -159,6 +159,13 @@ service cloud.firestore {
         && isDate(request.resource.data.date);
     }
 
+    // Bank reconciliation summaries (id = statement end date), saved from Transactions > Bank reconciliation.
+    match /bankRecs/{id} {
+      allow read: if true;
+      allow write: if isDate(id) && request.resource.data.end == id && isDate(request.resource.data.start)
+        && (request.resource.data.difference == '' || isMoney(request.resource.data.difference));
+    }
+
     // Dated versions of Settings > Limits (id = effective date), so past breaches use the limits then in force.
     match /limitSets/{id} {
       allow read: if true;

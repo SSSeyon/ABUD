@@ -7,7 +7,7 @@ import { dailyBreakdown } from '../daily.js';
 import { periodPicker, resolvePeriod, sharedPeriod } from '../period.js';
 import { ASSET_CLASSES, CLASS_LABELS } from '../portfolio.js';
 import { loadedAll, state } from '../store.js';
-import { classTag, excelButton, fmtDate, fmtNaira, h, table, todayISO, xDate, xMoney } from '../ui.js';
+import { classTag, excelButton, fmtDate, foldCard, fmtNaira, h, table, todayISO, xDate, xMoney } from '../ui.js';
 import { openHoldingStatement } from './holdingdetail.js';
 
 const NEEDS = ['transactions', 'instruments', 'fundPrices', 'funds'];
@@ -97,7 +97,7 @@ export function navDailyView(rerender) {
     h('section', { class: 'card' }, h('h2', null, `Income by investment: ${fmtDate(period.start)} – ${fmtDate(period.end)}`),
       h('p', { class: 'muted small' }, 'Income = closing − opening − money in + money out. Click an investment for its daily statement.'),
       table(['Investment', { label: 'Opening', num: true }, { label: 'Money in', num: true }, { label: 'Money out', num: true }, { label: 'Income', num: true }, { label: 'Closing', num: true }, { label: 'Share', num: true }], sumRows, 'No investments held in this period.')),
-    h('section', { class: 'card' }, h('h2', null, view.show === 'income' ? 'Day by day: where NAV came from' : 'Day by day: what NAV was made of'),
+    foldCard(view.show === 'income' ? 'Day by day: where NAV came from' : 'Day by day: what NAV was made of', `${b.days.length} days`,
       b.days.length > MAX_ROWS ? h('p', { class: 'muted small' }, `Showing the last ${MAX_ROWS} of ${b.days.length} days; the Excel file has every day.`) : null,
       h('p', { class: 'muted small' }, view.show === 'income'
         ? 'Each day: opening NAV + inflows − withdrawals and fees + income = closing NAV.'

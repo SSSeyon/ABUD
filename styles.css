@@ -111,6 +111,8 @@ button:hover { border-color: var(--slate); }
 button:disabled { opacity: .6; cursor: progress; }
 button.primary { background: var(--brand); border-color: var(--brand); color: var(--accent-fg); }
 button.primary:hover { background: var(--brand-strong); border-color: var(--brand-strong); }
+.button-link.primary { background: var(--brand); border-color: var(--brand); color: var(--accent-fg); font-weight: 600; }
+.button-link.primary:hover { background: var(--brand-strong); border-color: var(--brand-strong); }
 button.danger { color: var(--bad); }
 button.danger:hover { border-color: var(--bad); }
 button.link { border: 0; background: none; color: var(--brand); padding: 4px 0; }
@@ -151,6 +153,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--brand); outline:
 .center { min-height: 100vh; display: grid; place-items: center; padding: 16px; }
 .page-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
 .card .page-head { margin-bottom: 8px; }
+.page-tools { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
+.pager { display: flex; gap: 12px; align-items: center; justify-content: center; margin: 14px 0; }
 .card-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 8px; flex-wrap: wrap; }
 .card-head h2 { margin: 0; }
 
@@ -279,6 +283,7 @@ dialog.modal {
 }
 dialog.modal::backdrop { background: rgba(16, 17, 20, .45); }
 .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+.actions .actions-left { margin-right: auto; }
 .toast {
   position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 50;
   background: var(--fg); color: var(--surface); padding: 10px 16px; border-radius: 10px; max-width: calc(100vw - 32px); box-shadow: 0 8px 24px rgba(0, 0, 0, .2);
@@ -315,7 +320,14 @@ dialog.modal::backdrop { background: rgba(16, 17, 20, .45); }
 .alert-level.high { background: var(--bad-bg); color: var(--bad); }
 .alert-level.medium { background: var(--warn-bg); color: var(--warn); }
 .alert-level.low { background: var(--surface-2); color: var(--muted); }
-.alerts-card.has-high { border-left: 3px solid var(--bad); }
+.alert-strip { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px 16px; margin-bottom: 16px; background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--warn); text-decoration: none; color: inherit; }
+.alert-strip.has-high { border-left-color: var(--bad); }
+.alert-counts { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.alert-counts .alert-level { font-size: 12px; padding: 4px 10px; }
+.alert-strip.ok { border-left-color: var(--ok); }
+.alert-strip-top { color: var(--muted); flex: 1 1 220px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.alert-strip-link { color: var(--brand); font-weight: 600; margin-left: auto; }
+.alert-strip:hover .alert-strip-link { text-decoration: underline; }
 .nav-count { margin-left: auto; background: #e0344f; color: #fff; font-size: 11px; font-weight: 700; border-radius: 999px; padding: 0 7px; line-height: 18px; }
 
 /* Maturity ladder */
@@ -363,11 +375,11 @@ dialog.modal::backdrop { background: rgba(16, 17, 20, .45); }
 }
 
 /* Dashboard: top options */
-.opps { list-style: none; margin: 0; padding: 0; counter-reset: opp; }
-.opps li { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); counter-increment: opp; }
-.opps li:last-child { border-bottom: 0; }
-.opps li > div:first-child::before { content: counter(opp) '. '; color: var(--muted); font-weight: 600; }
-.opps .num { text-align: right; font-variant-numeric: tabular-nums; }
+
+
+
+
+
 
 /* ---------- Home: one card per section ---------- */
 .home-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px 24px; flex-wrap: wrap; margin-bottom: 18px; }
@@ -574,17 +586,18 @@ tr.clickable:focus-visible { outline: 2px solid var(--brand); outline-offset: -2
 .card, .stat, .table-wrap, .document, .close-status, dialog.modal, .home-card, .notif-panel, .form-preview, .toast, .chart-tip { --c: var(--cut); }
 button, input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea, .button-link, .sidebar nav a,
 .icon-btn, .seg, .seg button, .hc-icon, .bb-tab, .ladder-row, .home-summary span, .chip, .brand-row, .doc-firm, .doc-client { --c: var(--cut-sm); }
-.badge, .alert-level, .chip-count, .nav-count, .bell-count, .hc-count { --c: var(--cut-xs); }
+.badge, .alert-level, .alert-strip, .chip-count, .nav-count, .bell-count, .hc-count { --c: var(--cut-xs); }
+.alert-strip { --c: var(--cut-sm); }
 .card, .stat, .table-wrap, .document, .close-status, dialog.modal, .home-card, .notif-panel, .form-preview, .toast, .chart-tip,
 button, input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea, .button-link, .sidebar nav a,
 .icon-btn, .seg, .seg button, .hc-icon, .bb-tab, .ladder-row, .home-summary span, .chip, .brand-row, .doc-firm, .doc-client,
-.badge, .alert-level, .chip-count, .nav-count, .bell-count, .hc-count { border-radius: var(--c) 0; corner-shape: bevel; }
+.badge, .alert-level, .alert-strip, .chip-count, .nav-count, .bell-count, .hc-count { border-radius: var(--c) 0; corner-shape: bevel; }
 .swatch, .alloc-bar, .ladder-bar, .hbar { border-radius: 0; }
 @supports not (corner-shape: bevel) {
   .card, .stat, .table-wrap, .document, .close-status, .home-card, .form-preview, .toast, .chart-tip,
   button, input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea, .button-link, .sidebar nav a,
   .icon-btn, .seg, .seg button, .hc-icon, .bb-tab, .ladder-row, .home-summary span, .chip, .brand-row, .doc-firm, .doc-client,
-  .badge, .alert-level, .chip-count, .nav-count, .bell-count, .hc-count {
+  .badge, .alert-level, .alert-strip, .chip-count, .nav-count, .bell-count, .hc-count {
     border-radius: 0;
     clip-path: polygon(var(--c) 0, 100% 0, 100% calc(100% - var(--c)), calc(100% - var(--c)) 100%, 0 100%, 0 var(--c));
   }
@@ -593,3 +606,25 @@ button, input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), se
   :focus-visible { outline-offset: -2px; }
 }
 @media (max-width: 860px) { dialog.modal { border-radius: 0; clip-path: none; } }
+
+/* Row actions menu (actionMenu in ui.js). */
+.menu-btn { white-space: nowrap; }
+.action-menu { position: fixed; z-index: 60; display: flex; flex-direction: column; min-width: 170px; padding: 6px; gap: 2px;
+  background: var(--surface); border: 1px solid var(--border); box-shadow: 0 8px 24px rgba(0, 0, 0, .18); --c: var(--cut-sm); border-radius: var(--c) 0; corner-shape: bevel; }
+.action-menu button { justify-content: flex-start; text-align: left; border-color: transparent; background: transparent; width: 100%; }
+.action-menu button:hover, .action-menu button:focus-visible { background: var(--surface-2); }
+.action-menu button.primary { color: var(--brand); background: transparent; font-weight: 600; }
+.action-menu button.danger { color: var(--bad); }
+
+/* Folded cards (foldCard in ui.js). */
+details.fold > summary { display: flex; align-items: baseline; gap: 12px; cursor: pointer; list-style: none; }
+details.fold > summary::-webkit-details-marker { display: none; }
+details.fold > summary h2 { margin: 0; }
+details.fold > summary .fold-cue { margin-left: auto; color: var(--brand); font-weight: 600; font-size: 13px; white-space: nowrap; }
+details.fold > summary .fold-cue::after { content: 'Show ▾'; }
+details.fold[open] > summary { margin-bottom: 12px; }
+details.fold[open] > summary .fold-cue::after { content: 'Hide ▴'; }
+
+/* File picker shown as a button (Bank reconciliation). */
+.file-btn { position: relative; cursor: pointer; }
+.file-btn input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
