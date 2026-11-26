@@ -520,11 +520,12 @@ dialog.modal::backdrop { background: rgba(16, 17, 20, .45); }
 /* Sankey */
 .sk-holder { width: 100%; }
 .sk-holder svg { display: block; width: 100%; height: auto; }
-.sk-band { opacity: .38; transition: opacity .12s; }
-.sk-band:hover { opacity: .62; }
+.sk-band { opacity: .5; transition: opacity .12s; }
+.sk-band:hover { opacity: .8; }
 .sk-label { font-size: 12px; fill: var(--fg); paint-order: stroke; stroke: var(--surface); stroke-width: 4px; stroke-linejoin: round; pointer-events: none; }
 .sk-val { fill: var(--muted); font-variant-numeric: tabular-nums; }
-.sk-mid { font-weight: 600; }
+.sk-label .sk-name { font-weight: 600; }
+.sk-node { cursor: default; }
 .sk-figures { margin-top: 8px; font-size: 13px; }
 .sk-figures summary { cursor: pointer; color: var(--muted); }
 .sk-figures td { padding: 5px 8px; }

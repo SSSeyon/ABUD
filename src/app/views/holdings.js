@@ -77,21 +77,16 @@ export function holdingsView(rerender) {
   for (const c of ASSET_CLASSES) {
     if (c.key === 'call_deposit' || c.key === 'cash') continue;
     const group = live.filter((i) => i.type === c.key);
-    const accts = c.key === 'money_market_fund' ? accounts : [];
-    // Every fund in the register gets a row even with nothing in it, so it can be topped up from here.
-    const idle = c.key === 'money_market_fund' && (!filt.type || filt.type === c.key) && !filt.counterparty && !filt.custodian && !horizon
-      ? [...funds.values()].filter((f) => !group.some((i) => i.fundId === f.id) && !accts.some((p) => p.fundId === f.id)
-        && (!q || [f.name, f.managerName, 'money market fund'].some((s) => String(s ?? '').toLowerCase().includes(q))))
-      : [];
-    if (!group.length && !accts.length && !idle.length) continue;
+    // A class with nothing in it is left out until money goes in (a fund account at nil included).
+    const accts = (c.key === 'money_market_fund' ? accounts : []).map((p) => ({ p, v: p.value(today) })).filter((a) => a.v.abs().gte('0.5'));
+    if (!group.length && !accts.length) continue;
     const values = group.map(valueOf);
-    const acctValues = accts.map((p) => p.value(today));
+    const acctValues = accts.map((a) => a.v);
     const sub = [...values, ...acctValues].reduce((t, v) => (typeof v === 'string' ? t : t.plus(v)), dec(0));
     total = total.plus(sub);
-    rows.push(h('tr', { class: 'group' }, h('td', { colspan: 8 }, classTag(c.key, c.label), h('span', { class: 'muted' }, ` · ${group.length + accts.length + idle.length}`)), h('td', { class: 'num' }, fmtNaira(sub)), h('td', null)));
-    accts.forEach((p, n) => rows.push(accountRow(p, acctValues[n], statements, today)));
+    rows.push(h('tr', { class: 'group' }, h('td', { colspan: 8 }, classTag(c.key, c.label), h('span', { class: 'muted' }, ` · ${group.length + accts.length}`)), h('td', { class: 'num' }, fmtNaira(sub)), h('td', null)));
+    accts.forEach((a) => rows.push(accountRow(a.p, a.v, statements, today)));
     group.forEach((i, n) => rows.push(row(i, values[n])));
-    idle.forEach((f) => rows.push(idleFundRow(f, data)));
   }
   // Cash and call deposits, last: the uninvested balance (from the NAV series) and any open calls.
   const calls = live.filter((i) => i.type === 'call_deposit');
@@ -135,21 +130,6 @@ export function holdingsView(rerender) {
     ),
     h('p', { class: 'muted' }, 'Click a holding for its daily statement; Actions has roll over, maturity and the rest. Custodian totals are on Counterparties. Values are end of day: bills and CPs at amortised cost, deposits with accrued interest, funds at the uploaded statement balance (or else the latest price or accrued yield). Matured and redeemed holdings drop off this list once the maturity or redemption is recorded.'),
   );
-}
-
-/** A fund with nothing in it today: when it was last redeemed, and buttons to subscribe or upload a statement. */
-function idleFundRow(f, data) {
-  const ids = new Set((data.instruments ?? []).filter((i) => i.type === 'money_market_fund' && i.fundId === f.id).map((i) => i.id));
-  const last = (data.transactions ?? []).filter((t) => t.type === 'fund_redemption' && ids.has(t.instrumentId)).reduce((m, t) => (!m || t.date > m.date ? t : m), null);
-  const note = last ? `Nothing invested: redeemed ${fmtNaira(last.amount)} on ${fmtDate(last.date)}` : 'Nothing invested yet';
-  return h('tr', null,
-    h('td', null, TYPE_LABELS.money_market_fund, h('div', { class: 'muted' }, f.name), h('div', { class: 'badge' }, note)),
-    h('td', null, f.managerName ?? ''),
-    h('td', { class: 'num' }, '—'), h('td', { class: 'num' }, '—'), h('td', null, '—'), h('td', null, ''), h('td', null, 'Open'), h('td', { class: 'num' }, ''),
-    h('td', { class: 'num' }, fmtNaira(0)),
-    h('td', null, actionMenu([
-      { label: 'Subscribe', primary: true, onClick: () => dealForm(state.data, null, null, { type: 'money_market_fund', fundId: f.id, counterpartyName: f.managerName }) },
-      { label: 'Upload statement', onClick: () => openFundUpload(f.id) }])));
 }
 
 /** The uninvested cash balance: one row; click for its daily statement. */

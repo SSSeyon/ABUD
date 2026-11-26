@@ -40,7 +40,8 @@ no withdrawal-instruction verification or signatory register. Do not add them ba
   the screen (`fitHome`). Top bar on every screen: notifications bell (today's alerts; read ones kept in localStorage
   `abud-seen-alerts`) and the light/dark toggle (`abud-theme`, applied by index.html before paint; dark tokens live
   under `:root[data-theme="dark"]`, so never use a prefers-color-scheme media query for colours).
-- Money flows on the Dashboard (and Management report): `periodFlows` in flows.js drawn as `sankey`, or `flowsAs('bars'|'donut')`
+- Money flows on the Dashboard (and Management report): `periodFlows` in flows.js drawn as `sankey` (Apowo style: sources straight to targets, gradient
+  bands, targets labelled by category only with amount and share, sources listed under the chart), or `flowsAs('bars'|'donut')`
   (charts.js; choice remembered in `abud-flow-chart`). `donut`, `hBars`, `segmented` live in charts.js too.
 - Numbers on screen are whole naira (`fmtNaira` rounds half up; `fmtCompact` for chart labels, e.g. ₦4,152m); only
   percentages keep decimals. Excel cells keep the full value with a `#,##0` format. Stat tiles shrink their figure
@@ -51,8 +52,8 @@ no withdrawal-instruction verification or signatory register. Do not add them ba
   out, income, close; income = close − open − in + out, so incomes + external flows = the NAV change) and
   `positionStatement`, plus `cashStatement` for the uninvested balance. Holdings ends with a "Cash and call deposits"
   group (cash at bank from `navSeries`, and open call deposits), so its total is NAV; the cash row opens the cash
-  statement (`openHoldingStatement('cash')`). Every fund in `funds` always has a Holdings row: with nothing in it, an
-  idle row (last redemption, Subscribe pre-filled, Upload statement). #/navdaily (`views/navdaily.js`) shows it by investment or class, as income or value; clicking a
+  statement (`openHoldingStatement('cash')`). A class or fund with nothing in it
+  has no Holdings row until money goes in (subscribe through New deal). #/navdaily (`views/navdaily.js`) shows it by investment or class, as income or value; clicking a
   holding (Holdings rows, Daily NAV) opens its daily statement (`views/holdingdetail.js`).
 - Fund statements: Holdings → Upload fund statement (`views/fundupload.js`, `fundstatement.js`: `parseStatement` finds the
   Date / Investment / Liquidation / Withdrawal / Rate / Earnings / Balance columns, `statementPlan` matches movements to

@@ -22,6 +22,6 @@ export function periodFlows(r) {
     else if (c.income.lt('-0.5')) losses = losses.plus(c.income.neg());
   }
   if (losses.gt('0.5')) right.push({ label: 'Losses', value: losses, color: NEUTRAL.losses });
-  for (const c of r.classes) if (c.closing.gt('0.5')) right.push({ label: `Closing: ${c.label.toLowerCase()}`, short: SHORT[c.key] ?? c.label, value: c.closing, color: `var(--class-${c.key})` });
+  for (const c of r.classes) if (c.closing.gt('0.5')) right.push({ label: c.label, short: SHORT[c.key] ?? c.label, value: c.closing, color: `var(--class-${c.key})` });
   return { left, right };
 }
