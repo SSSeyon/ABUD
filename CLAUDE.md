@@ -37,8 +37,29 @@ no withdrawal-instruction verification or signatory register. Do not add them ba
 - Shell (like Wiwe Apartments): `#/home` (`views/home.js`) shows one card per section from `SECTIONS` in main.js; the
   logo always leads Home. A section with several screens shows them as `section-tabs`. Desktop: sidebar of sections.
   Phones (<= 860px): top bar (logo + title) and a bottom tab bar (Home, Dashboard, Alerts, Holdings); Home cards fill
-  the screen (`fitHome`). Money-flow Sankey: `sankey` in charts.js + `periodFlows` in flows.js (Reports, Management).
-- `index.html`, `styles.css` app shell. `src/app/main.js` hash router (#/home, #/dashboard, #/alerts, #/holdings, #/ladder, #/transactions, #/counterparties, #/market, #/reports, #/management, #/close, #/backtest, #/termination, #/history, #/settings).
+  the screen (`fitHome`). Top bar on every screen: notifications bell (today's alerts; read ones kept in localStorage
+  `abud-seen-alerts`) and the light/dark toggle (`abud-theme`, applied by index.html before paint; dark tokens live
+  under `:root[data-theme="dark"]`, so never use a prefers-color-scheme media query for colours).
+- Money flows on the Dashboard (and Management report): `periodFlows` in flows.js drawn as `sankey`, or `flowsAs('bars'|'donut')`
+  (charts.js; choice remembered in `abud-flow-chart`). `donut`, `hBars`, `segmented` live in charts.js too.
+- Numbers on screen are whole naira (`fmtNaira` rounds half up; `fmtCompact` for chart labels, e.g. ₦4,152m); only
+  percentages keep decimals. Excel cells keep the full value with a `#,##0` format. Stat tiles shrink their figure
+  with the tile (container query) so nothing overflows.
+- `index.html`, `styles.css` app shell. `src/app/main.js` hash router (#/home, #/dashboard, #/alerts, #/holdings, #/ladder, #/transactions, #/counterparties, #/market, #/reports, #/navdaily, #/management, #/close, #/backtest, #/termination, #/history, #/settings).
+- Positions (`positionsFor` in portfolio.js): every deal, plus one account per money market fund on an uploaded statement.
+  `holdingsOn` and `periodReport` value through them. `daily.js`: `dailyBreakdown` (per position per day: open, in,
+  out, income, close; income = close − open − in + out, so incomes + external flows = the NAV change) and
+  `positionStatement`. #/navdaily (`views/navdaily.js`) shows it by investment or class, as income or value; clicking a
+  holding (Holdings rows, Daily NAV) opens its daily statement (`views/holdingdetail.js`).
+- Fund statements: Holdings → Upload fund statement (`views/fundupload.js`, `fundstatement.js`: `parseStatement` finds the
+  Date / Investment / Liquidation / Withdrawal / Rate / Earnings / Balance columns, `statementPlan` matches movements to
+  recorded ones within ₦1). Daily rows go into `fundPrices/{fundId}_{date}` with `balance` (rows in closed quarters are
+  left out); unmatched movements become subscriptions/redemptions on the fund account `instruments/acct-{fundId}`.
+  From a fund's first statement day the engine values the whole fund at the statement balance (`FundStatementBook`;
+  after the last row it accrues at the last rate), instead of deal by deal.
+- Partial liquidation (fixed deposits only): `partialLiquidationPlan` in liquidation.js + `partialLiquidate` in actions.js.
+  One change: early `mature` for value-to-date less penalty, new deposit for the balance at the same rate to the
+  original maturity (`parentId`), its `invest`, and optionally a `withdrawal` of the amount needed.
 - Periods: `src/app/period.js` (QTD, YTD, any quarter, since inception, custom); one shared choice across Dashboard, Reports, History.
 - Alerts: `src/app/alerts.js` computes them live from the data and the limits in force (`limitsFrom(data, date)`: latest
   `limitSets/{effectiveFrom}` version, else `settings/limits`, else plan defaults). New deals over the tenor limit or with

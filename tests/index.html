@@ -29,6 +29,7 @@
     await import('./app/alerts.test.js');
     await import('./app/close.test.js');
     await import('./app/extras.test.js');
+    await import('./app/daily.test.js');
     const { passed, failed, results } = await run();
     window.__testResults = { passed, failed, results };
     summary.textContent = `${passed} passed, ${failed} failed`;

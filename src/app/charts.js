@@ -1,7 +1,7 @@
 // Small inline-SVG charts: a NAV line with hover read-out, and an allocation bar with legend.
 // Colours come from CSS tokens (--class-<key>, --chart-*), so light and dark mode are handled in styles.css.
 import { dec } from '../engine/decimal.js';
-import { fmtDate, fmtNaira, h } from './ui.js';
+import { fmtCompact, fmtDate, fmtNaira, h } from './ui.js';
 
 const SVG = 'http://www.w3.org/2000/svg';
 function s(tag, attrs = {}, ...children) {
@@ -11,16 +11,8 @@ function s(tag, attrs = {}, ...children) {
   return el;
 }
 
-/** Short naira for axes: ₦2.26bn, ₦624.1m, ₦85k. */
-export function fmtShort(x) {
-  const n = Number(x);
-  const a = Math.abs(n);
-  const sign = n < 0 ? '−' : '';
-  if (a >= 1e9) return `${sign}₦${(a / 1e9).toFixed(a >= 1e10 ? 1 : 2)}bn`;
-  if (a >= 1e6) return `${sign}₦${(a / 1e6).toFixed(a >= 1e8 ? 0 : 1)}m`;
-  if (a >= 1e3) return `${sign}₦${(a / 1e3).toFixed(0)}k`;
-  return `${sign}₦${a.toFixed(0)}`;
-}
+/** Short naira for axes and labels, no decimals: ₦2,260m, ₦624m, ₦85k. */
+export const fmtShort = fmtCompact;
 
 function niceTicks(min, max, count = 4) {
   if (max === min) max = min + 1;
@@ -286,4 +278,76 @@ export function sankey(left, right, { middle = 'Portfolio', height = 360, format
       h('td', { class: 'num' }, fmtNaira(dec(x.value))), h('td', { class: 'num muted' }, share(x.v)))))));
   wrap.append(holder, tip, figures);
   return wrap;
+}
+
+/**
+ * Donut of parts [{label, value, color}] with the total in the middle, a hover read-out and a legend
+ * (name, amount, share) underneath, so no figure depends on colour alone.
+ */
+export function donut(parts, { label = 'Chart', centre = 'Total', size = 200 } = {}) {
+  const live = parts.map((p) => ({ ...p, v: Number(p.value) })).filter((p) => p.v > 0);
+  const total = live.reduce((t, p) => t + p.v, 0);
+  const wrap = h('div', { class: 'chart donut', role: 'img', 'aria-label': `${label}: ${live.map((p) => `${p.label} ${fmtShort(p.v)}`).join(', ')}` });
+  if (!total) { wrap.append(h('p', { class: 'muted empty' }, 'Nothing to show for this period.')); return wrap; }
+  const r = size / 2;
+  const ring = 26;
+  const rad = r - ring / 2 - 2;
+  const C = 2 * Math.PI * rad;
+  const svg = s('svg', { viewBox: `0 0 ${size} ${size}`, width: size, height: size, class: 'donut-svg' });
+  svg.append(s('circle', { cx: r, cy: r, r: rad, fill: 'none', stroke: 'var(--surface-2)', 'stroke-width': ring }));
+  const tip = h('div', { class: 'chart-tip', hidden: true });
+  const share = (v) => `${((v / total) * 100).toFixed(1)}%`;
+  let at = 0;
+  for (const p of live) {
+    const len = (p.v / total) * C;
+    const gap = live.length > 1 ? Math.min(2, len / 2) : 0;
+    const arc = s('circle', {
+      cx: r, cy: r, r: rad, fill: 'none', stroke: p.color, 'stroke-width': ring, class: 'donut-seg',
+      'stroke-dasharray': `${Math.max(0, len - gap)} ${C}`, 'stroke-dashoffset': -at, transform: `rotate(-90 ${r} ${r})`,
+    });
+    arc.addEventListener('pointermove', (e) => {
+      const box = wrap.getBoundingClientRect();
+      tip.replaceChildren(h('div', { class: 'tip-date' }, p.label), h('div', null, `${fmtNaira(dec(p.value))} · ${share(p.v)}`));
+      tip.hidden = false;
+      tip.style.left = `${Math.min(Math.max(e.clientX - box.left, 90), box.width - 90)}px`;
+      tip.style.top = `${e.clientY - box.top}px`;
+    });
+    arc.addEventListener('pointerleave', () => { tip.hidden = true; });
+    svg.append(arc);
+    at += len;
+  }
+  svg.append(s('text', { x: r, y: r - 4, 'text-anchor': 'middle', class: 'donut-total' }, fmtShort(total)));
+  svg.append(s('text', { x: r, y: r + 14, 'text-anchor': 'middle', class: 'donut-caption' }, centre));
+  const legend = h('ul', { class: 'legend' }, live.map((p) => h('li', null,
+    h('span', { class: 'swatch', style: `background:${p.color}` }), h('span', { class: 'legend-label' }, p.label),
+    h('span', { class: 'legend-value' }, fmtNaira(dec(p.value))), h('span', { class: 'legend-share' }, share(p.v)))));
+  wrap.append(h('div', { class: 'donut-ring' }, svg), tip, legend);
+  return wrap;
+}
+
+/** Horizontal bars for a list [{label, value, color}], all on one scale (max = the longest bar's scale). */
+export function hBars(parts, { label = 'Chart', max } = {}) {
+  const live = parts.map((p) => ({ ...p, v: Number(p.value) })).filter((p) => p.v > 0);
+  const top = max ?? Math.max(0, ...live.map((p) => p.v));
+  if (!top) return h('p', { class: 'muted empty' }, 'Nothing to show for this period.');
+  return h('ul', { class: 'hbars', role: 'img', 'aria-label': `${label}: ${live.map((p) => `${p.label} ${fmtShort(p.v)}`).join(', ')}` },
+    live.map((p) => h('li', { title: `${p.label}: ${fmtNaira(dec(p.value))}` },
+      h('span', { class: 'hbar-label' }, p.label),
+      h('span', { class: 'hbar-track' }, h('span', { class: 'hbar', style: `width:${Math.max(0.6, (p.v / top) * 100)}%;background:${p.color}` })),
+      h('span', { class: 'hbar-value' }, fmtShort(p.v)))));
+}
+
+/** Money flows as two side-by-side views (where it came from, where it went) in the chosen form: 'bars' or 'donut'. */
+export function flowsAs(kind, left, right) {
+  const sum = (l) => l.reduce((t, x) => t + Number(x.value), 0);
+  const max = Math.max(...[...left, ...right].map((x) => Number(x.value)), 0);
+  const side = (title, list, centre) => h('div', { class: 'flow-side' }, h('h3', null, `${title} · ${fmtShort(sum(list))}`),
+    kind === 'donut' ? donut(list, { label: title, centre }) : hBars(list, { label: title, max }));
+  return h('div', { class: 'flow-pair' }, side('Where the money came from', left, 'in'), side('Where it went', right, 'out'));
+}
+
+/** Segmented control: options [[value, label]], the current value, onPick(value). */
+export function segmented(options, value, onPick, label = 'Chart type') {
+  return h('div', { class: 'seg no-print', role: 'group', 'aria-label': label },
+    options.map(([v, l]) => h('button', { type: 'button', 'aria-pressed': v === value ? 'true' : 'false', onclick: () => onPick(v) }, l)));
 }

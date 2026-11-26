@@ -4,6 +4,7 @@ import { addDays, addMonths, daysBetween, ZERO } from '../engine/index.js';
 import { limitsFrom } from './alerts.js';
 import { belowMinimum, counterpartyName, findCounterparty, ratingOn } from './counterparties.js';
 import { holdingsOn, navSeries, TYPE_LABELS } from './portfolio.js';
+import { fmtNaira } from './ui.js';
 
 const FGN = new Set(['ntb', 'omo']);
 
@@ -50,7 +51,7 @@ export function breachesBetween(data, start, end) {
     const liquid = held.filter((x) => x.inst.type === 'money_market_fund' || (x.inst.maturityDate && x.inst.maturityDate <= horizon)).reduce((t, x) => t.plus(x.value), row.cash);
     const liqShare = liquid.div(row.nav);
     if (liqShare.lt(lim.liquidityShare)) out.push({ date: d, limit: 'Liquidity buffer', detail: `${pct(liqShare)} of NAV liquid within ${lim.liquidityDays} days (minimum ${pct(lim.liquidityShare)})` });
-    if (row.cash.gt(lim.idleCash)) out.push({ date: d, limit: 'Idle cash', detail: `₦${(Number(row.cash) / 1e6).toFixed(1)}m uninvested at month end (limit ₦${(Number(lim.idleCash) / 1e6).toFixed(1)}m)` });
+    if (row.cash.gt(lim.idleCash)) out.push({ date: d, limit: 'Idle cash', detail: `${fmtNaira(row.cash)} uninvested at month end (limit ${fmtNaira(lim.idleCash)})` });
   }
   for (const i of data.instruments ?? []) {
     if (!i.maturityDate || i.valueDate < start || i.valueDate > end) continue;

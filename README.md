@@ -25,7 +25,12 @@ Files that matter: `index.html`, `styles.css`, `src/`.
 
 - **Holdings → New deal** records an investment (bill, OMO, CP, fixed deposit, fund). **Record maturity** when it pays out.
 - **Transactions** for inflows from Access, withdrawals, interest and fee debits. Entries can be edited or deleted.
-- **Dashboard** shows NAV (gross of fees), cash, holdings, quarter-to-date return and fee accrued, and maturities due.
+- **Dashboard** shows NAV (gross of fees), cash, holdings, quarter-to-date return and fee accrued, money flows (Sankey,
+  bar or donut) and maturities due. The bell (top right) lists today's alerts; the sun/moon button switches dark mode.
+- **Holdings**: click a holding for its daily statement (opening, inflows, withdrawals, income, closing).
+  **Part-liquidate** on a fixed deposit takes out an amount plus the penalty and rolls the balance to the same maturity.
+  **Upload fund statement** reads the money market fund Excel from the platform; the fund is then valued at its balance.
+- **Reports → Daily NAV**: each day's NAV and the income from every investment, for the chosen period.
 
 ## Scheduled jobs (GitHub Actions)
 

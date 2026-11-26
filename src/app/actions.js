@@ -123,6 +123,53 @@ export async function rollOverDeal(old, maturity, next, tx) {
   ]);
 }
 
+/**
+ * Partial liquidation of a fixed deposit (plan from liquidation.js), as one change: the deposit's early maturity
+ * for the proceeds (value to date less the penalty), the balance placed again to the original maturity at the same
+ * rate, its investment entry, and optionally the amount paid out to Access as a withdrawal.
+ */
+export async function partialLiquidate(old, plan, { date, payOut, reference, notes }) {
+  const instId = newId('instruments');
+  const money = (x) => x.toFixed(2);
+  const changes = [
+    { coll: 'transactions', id: newId('transactions'), data: clean({
+      type: 'mature', date, amount: money(plan.proceeds), instrumentId: old.id, reference,
+      notes: `Partial liquidation: ${money(plan.amount)} taken out, penalty ${money(plan.penalty)}, ${money(plan.balance)} rolled to ${old.maturityDate}${notes ? `. ${notes}` : ''}`,
+      partialLiquidation: true, liquidated: money(plan.amount), penalty: money(plan.penalty), grossValue: money(plan.gross),
+    }) },
+    { coll: 'instruments', id: instId, data: clean({
+      type: old.type, counterpartyName: old.counterpartyName, custodianName: old.custodianName, rate: old.rate,
+      tradeDate: date, valueDate: date, maturityDate: old.maturityDate, cost: money(plan.balance),
+      parentId: old.id, notes: `Balance of a partial liquidation on ${date}`,
+    }) },
+    { coll: 'transactions', id: newId('transactions'), data: clean({ type: 'invest', date, amount: money(plan.balance), instrumentId: instId, reference, notes: 'Balance rolled after partial liquidation' }) },
+  ];
+  if (payOut) changes.push({ coll: 'transactions', id: newId('transactions'), data: clean({ type: 'withdrawal', date, amount: money(plan.amount), reference, notes: `Paid out from partial liquidation of ${old.counterpartyName ?? 'a fixed deposit'}` }) });
+  await commit(`Partial liquidation of ${old.counterpartyName ?? 'fixed deposit'}: ${money(plan.amount)} out, penalty ${money(plan.penalty)}, ${money(plan.balance)} rolled`, changes);
+}
+
+/**
+ * Saves an uploaded fund statement (plan from fundstatement.js): the daily rows into fundPrices in batches of 400
+ * (fixed ids, so an upload can be run again; not in the change history, like the history import), then the fund
+ * account and the new subscriptions and redemptions as one change in the history.
+ */
+export async function importFundStatement(plan, onProgress) {
+  for (let i = 0; i < plan.prices.length; i += 400) {
+    const batch = writeBatch(db);
+    for (const p of plan.prices.slice(i, i + 400)) batch.set(doc(db, 'fundPrices', p.id), p.data);
+    await batch.commit();
+    onProgress?.(Math.min(i + 400, plan.prices.length), plan.prices.length);
+  }
+  const changes = [];
+  if (plan.account) changes.push({ coll: 'instruments', id: plan.accountId, data: clean(plan.account) });
+  for (const m of plan.newMovements) {
+    changes.push({ coll: 'transactions', id: newId('transactions'), data: clean({ type: m.type, date: m.date, amount: m.amount, instrumentId: plan.accountId, notes: `From the ${plan.fund.name} statement` }) });
+  }
+  for (let i = 0; i < changes.length; i += 400) {
+    await commit(`${plan.fund.name} statement ${plan.first} to ${plan.last}: ${changes.length} entries${changes.length > 400 ? ` (part ${i / 400 + 1})` : ''}`, changes.slice(i, i + 400));
+  }
+}
+
 export async function saveFundPrice(fundId, date, priceOrYield) {
   await commit(`Fund yield or price for ${date}: ${priceOrYield}`, [{ coll: 'fundPrices', id: `${fundId}_${date}`, data: { fundId, date, priceOrYield }, stamp: false }]);
 }

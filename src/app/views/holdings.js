@@ -1,7 +1,10 @@
 import { addDays, FundPriceBook, Valuer, daysBetween, dec } from '../../engine/index.js';
 import { limitsFrom } from '../alerts.js';
-import { createDeal, rollOverDeal, saveFundPrice, saveTransaction, updateDeal } from '../actions.js';
-import { ASSET_CLASSES, closedInstrumentIds, DEPOSIT_TYPES, engineInputs, expectedMaturityValue, openingTransactions, toEngineInstrument, TYPE_LABELS } from '../portfolio.js';
+import { createDeal, partialLiquidate, rollOverDeal, saveFundPrice, saveTransaction, updateDeal } from '../actions.js';
+import { partialLiquidationPlan, PENALTY_BASES } from '../liquidation.js';
+import { openHoldingStatement } from './holdingdetail.js';
+import { openFundUpload } from './fundupload.js';
+import { ASSET_CLASSES, closedInstrumentIds, DEPOSIT_TYPES, engineInputs, expectedMaturityValue, openingTransactions, positionsFor, toEngineInstrument, TYPE_LABELS } from '../portfolio.js';
 import { loadedAll, state } from '../store.js';
 import { classTag, excelButton, fmtDate, fmtNaira, fmtPct, h, openForm, parseDecimal, parseMoney, parsePercent, table, toast, todayISO, xDate, xMoney, xPct } from '../ui.js';
 import { counterpartyName, custodianExposure, dealRatingCheck } from '../counterparties.js';
@@ -20,8 +23,11 @@ export function holdingsView(rerender) {
   const valuer = new Valuer(new FundPriceBook(engineInputs(data).fundPrices));
   const funds = new Map((data.funds ?? []).map((f) => [f.id, f]));
 
+  // Fund deals on an uploaded statement are shown as the fund's account instead (valued at the statement balance).
+  const { statements, byId } = positionsFor(data);
+  const covered = (i) => i.type === 'money_market_fund' && statements.covers(i.fundId, today);
   const allLive = (data.instruments ?? [])
-    .filter((i) => !closed.has(i.id))
+    .filter((i) => !closed.has(i.id) && !covered(i))
     .sort((a, b) => ((a.maturityDate ?? '9999') < (b.maturityDate ?? '9999') ? -1 : 1));
   const cpOf = (i) => counterpartyName(i, data.funds);
   const horizon = filt.within ? addDays(today, Number(filt.within)) : null;
@@ -31,6 +37,10 @@ export function holdingsView(rerender) {
     && (!filt.custodian || (i.custodianName?.trim() || "Not recorded") === filt.custodian)
     && (!horizon || (i.maturityDate && i.maturityDate <= horizon))
     && (!q || [cpOf(i), i.custodianName, TYPE_LABELS[i.type], funds.get(i.fundId)?.name].some((s) => String(s ?? "").toLowerCase().includes(q))));
+  const accounts = statements.funds.map((f) => byId.get(`fund:${f}`)).filter((p) => p && !p.value(today).isZero()
+    && (!filt.type || filt.type === 'money_market_fund') && (!filt.counterparty || p.inst.counterpartyName === filt.counterparty)
+    && (!filt.custodian || filt.custodian === 'Not recorded') && !horizon
+    && (!q || [p.inst.counterpartyName, p.label, 'money market fund'].some((s) => String(s ?? '').toLowerCase().includes(q))));
 
   const valueOf = (i) => {
     try {
@@ -45,7 +55,9 @@ export function holdingsView(rerender) {
     const dtm = i.maturityDate ? daysBetween(today, i.maturityDate) : null;
     return h(
       'tr',
-      { class: dtm != null && dtm < 0 ? 'bad' : null },
+      { class: `clickable ${dtm != null && dtm < 0 ? 'bad' : ''}`, tabindex: 0, title: 'Open the daily statement',
+        onclick: (e) => { if (!e.target.closest('button, a, select, input')) openHoldingStatement(i.id); },
+        onkeydown: (e) => { if (e.key === 'Enter' && e.target === e.currentTarget) openHoldingStatement(i.id); } },
       h('td', null, TYPE_LABELS[i.type], i.type === 'money_market_fund' ? h('div', { class: 'muted' }, funds.get(i.fundId)?.name ?? '') : null, dtm != null && dtm < 0 ? h('div', { class: 'badge warn' }, 'Matured: record it') : null),
       h('td', null, i.counterpartyName ?? ''),
       h('td', { class: 'num' }, fmtNaira(i.cost)),
@@ -64,11 +76,14 @@ export function holdingsView(rerender) {
   let total = dec(0);
   for (const c of ASSET_CLASSES) {
     const group = live.filter((i) => i.type === c.key);
-    if (!group.length) continue;
+    const accts = c.key === 'money_market_fund' ? accounts : [];
+    if (!group.length && !accts.length) continue;
     const values = group.map(valueOf);
-    const sub = values.reduce((t, v) => (typeof v === 'string' ? t : t.plus(v)), dec(0));
+    const acctValues = accts.map((p) => p.value(today));
+    const sub = [...values, ...acctValues].reduce((t, v) => (typeof v === 'string' ? t : t.plus(v)), dec(0));
     total = total.plus(sub);
-    rows.push(h('tr', { class: 'group' }, h('td', { colspan: 8 }, classTag(c.key, c.label), h('span', { class: 'muted' }, ` · ${group.length}`)), h('td', { class: 'num' }, fmtNaira(sub)), h('td', null)));
+    rows.push(h('tr', { class: 'group' }, h('td', { colspan: 8 }, classTag(c.key, c.label), h('span', { class: 'muted' }, ` · ${group.length + accts.length}`)), h('td', { class: 'num' }, fmtNaira(sub)), h('td', null)));
+    accts.forEach((p, n) => rows.push(accountRow(p, acctValues[n], statements, today)));
     group.forEach((i, n) => rows.push(row(i, values[n])));
   }
   if (rows.length) rows.push(h('tr', { class: 'total' }, h('td', { colspan: 8 }, 'Total holdings'), h('td', { class: 'num' }, fmtNaira(total)), h('td', null)));
@@ -94,14 +109,14 @@ export function holdingsView(rerender) {
   return h(
     'div',
     null,
-    h('div', { class: 'page-head' }, h('div', null, h('h1', null, 'Holdings'), h('p', { class: 'subtitle' }, `Open positions at end of ${fmtDate(today)}, by asset class${filtered ? ` · ${live.length} of ${allLive.length} shown` : ''}`)), h('button', { class: 'primary', onclick: () => dealForm(data) }, 'New deal')),
+    h('div', { class: 'page-head' }, h('div', null, h('h1', null, 'Holdings'), h('p', { class: 'subtitle' }, `Open positions at end of ${fmtDate(today)}, by asset class${filtered ? ` · ${live.length} of ${allLive.length} shown` : ''}`)), h('div', { class: 'row-actions head-actions' }, h('button', { onclick: () => openFundUpload() }, 'Upload fund statement'), h('button', { class: 'primary', onclick: () => dealForm(data) }, 'New deal'))),
     toolbar,
     table(
       ['Instrument', 'Counterparty', { label: 'Cost', num: true }, { label: 'At maturity', num: true }, 'Rate', 'Value date', 'Maturity', { label: 'Days left', num: true }, { label: 'Value today', num: true }, ''],
       rows,
       filtered ? 'No holdings match these filters.' : 'No holdings yet. Use "New deal" to record an investment.',
     ),
-    h('p', { class: 'muted' }, 'Values are end of day: bills and CPs at amortised cost, deposits with accrued interest, funds at the latest price or accrued yield. Matured and redeemed holdings drop off this list once the maturity or redemption is recorded.'),
+    h('p', { class: 'muted' }, 'Click a holding for its daily statement. Values are end of day: bills and CPs at amortised cost, deposits with accrued interest, funds at the uploaded statement balance (or else the latest price or accrued yield). Matured and redeemed holdings drop off this list once the maturity or redemption is recorded.'),
     h('section', { class: 'card' }, h('h2', null, 'Holdings by custodian'),
       table(['Custodian', { label: 'Holdings', num: true }, { label: 'Value', num: true }, { label: 'Share', num: true }],
         custodians.map((c) => h('tr', null,
@@ -111,6 +126,71 @@ export function holdingsView(rerender) {
         'No holdings.'),
       h('p', { class: 'muted small' }, 'Custodians come from each deal. Keep the names consistent with the register on the Counterparties screen.')),
   );
+}
+
+/** A fund kept on uploaded statements: one row, valued at the statement balance. */
+function accountRow(p, value, statements, today) {
+  const rows = statements.byFund.get(p.fundId) ?? [];
+  const last = rows.at(-1);
+  const stale = last && daysBetween(last.date, today) > 7;
+  return h('tr', { class: 'clickable', tabindex: 0, title: 'Open the daily statement',
+    onclick: (e) => { if (!e.target.closest('button, a')) openHoldingStatement(p.id); },
+    onkeydown: (e) => { if (e.key === 'Enter' && e.target === e.currentTarget) openHoldingStatement(p.id); } },
+    h('td', null, TYPE_LABELS.money_market_fund, h('div', { class: 'muted' }, p.label),
+      last ? h('div', { class: `badge ${stale ? 'warn' : ''}` }, `Statement to ${fmtDate(last.date)}`) : null),
+    h('td', null, p.inst.counterpartyName ?? ''),
+    h('td', { class: 'num' }, '—'), h('td', { class: 'num' }, '—'),
+    h('td', null, last ? `${fmtPct(last.rate, 2)} yield` : '—'),
+    h('td', null, fmtDate(p.start)), h('td', null, 'Open'), h('td', { class: 'num' }, ''),
+    h('td', { class: 'num' }, fmtNaira(value)),
+    h('td', null, h('div', { class: 'row-actions' },
+      h('button', { onclick: () => openHoldingStatement(p.id) }, 'Statement'),
+      h('button', { onclick: () => openFundUpload(p.fundId) }, 'Upload'))));
+}
+
+/**
+ * Partial liquidation of a fixed deposit: take out the amount needed and the penalty, and place the balance again
+ * at the same rate to the original maturity date. Shows the figures as they are typed.
+ */
+function liquidationForm(i, openingTx) {
+  const today = todayISO();
+  const planFor = (v) => partialLiquidationPlan(i, {
+    date: v.date,
+    amount: parseMoney(v.amount, 'Amount needed'),
+    penaltyBasis: v.penaltyBasis,
+    penaltyValue: v.penaltyBasis === 'fixed' ? parseMoney(v.penaltyValue || '0', 'Penalty', { allowZero: true }) : v.penaltyBasis === 'none' ? '0' : parsePercent(v.penaltyValue || '0', 'Penalty rate'),
+  });
+  openForm({
+    title: 'Partial liquidation',
+    intro: `${TYPE_LABELS[i.type]} · ${i.counterpartyName ?? ''} · ${fmtNaira(i.cost)} at ${fmtPct(i.rate, 2)} to ${fmtDate(i.maturityDate)}. The deposit is broken on the date, the amount needed and the penalty come out, and the balance is placed again at the same rate to the same maturity. One Undo in Change history reverses it all.`,
+    submitLabel: 'Liquidate and roll the balance',
+    fields: [
+      { name: 'date', label: 'Liquidation date', type: 'date', required: true, value: today < i.maturityDate ? today : '' },
+      { name: 'amount', label: 'Amount needed (₦)', type: 'money', required: true, help: 'What has to be paid out. The penalty comes on top of this.' },
+      { name: 'penaltyBasis', label: 'Early termination penalty', type: 'select', required: true, value: 'interest_pct', options: PENALTY_BASES },
+      { name: 'penaltyValue', label: 'Penalty rate (%)', type: 'percent', required: true, value: '25', showIf: (v) => v.penaltyBasis === 'interest_pct' || v.penaltyBasis === 'amount_pct', help: 'For example 25 means a quarter of the interest earned on the part taken out.' },
+      { name: 'penaltyFixed', label: 'Penalty (₦)', type: 'money', required: true, showIf: (v) => v.penaltyBasis === 'fixed' },
+      { name: 'payOut', label: 'The amount needed', type: 'select', value: 'yes', options: [{ value: 'yes', label: 'Pay it out to Access (record a withdrawal)' }, { value: 'no', label: 'Keep it in the cash account' }] },
+      { name: 'reference', label: 'Reference', type: 'text', value: openingTx?.reference ?? '' },
+      { name: 'notes', label: 'Notes', type: 'textarea' },
+    ],
+    preview: (v) => {
+      if (!v.date || !v.amount) return h('p', { class: 'muted' }, 'Enter the date and the amount needed to see the figures.');
+      const p = planFor({ ...v, penaltyValue: v.penaltyBasis === 'fixed' ? v.penaltyFixed : v.penaltyValue });
+      const line = (label, x, strong) => h('tr', { class: strong ? 'total' : null }, h('td', null, label), h('td', { class: 'num' }, fmtNaira(x)));
+      return h('table', { class: 'bridge' }, h('tbody', null,
+        line(`Value at ${fmtDate(v.date)} (${p.days} days' interest ${fmtNaira(p.accrued)})`, p.gross),
+        line('Less early termination penalty', p.penalty.neg()),
+        line('Less amount taken out', p.amount.neg()),
+        line(`Balance placed again to ${fmtDate(i.maturityDate)} (${p.remainingDays} days at ${fmtPct(i.rate, 2)})`, p.balance, true),
+        line('Expected at maturity', p.maturityValue)));
+    },
+    onSubmit: async (v) => {
+      const plan = planFor({ ...v, penaltyValue: v.penaltyBasis === 'fixed' ? v.penaltyFixed : v.penaltyValue });
+      await partialLiquidate(i, plan, { date: v.date, payOut: v.payOut === 'yes', reference: v.reference, notes: v.notes });
+      toast(`Liquidated ${fmtNaira(plan.amount)}; ${fmtNaira(plan.balance)} rolled to ${fmtDate(i.maturityDate)}.`);
+    },
+  });
 }
 
 /** Refuses a new deal with a counterparty rated below the minimum in Settings > Limits. */
@@ -146,6 +226,7 @@ function actionsFor(i, fund, openingTx) {
   }
   return h('div', { class: 'row-actions' },
     h('button', { class: 'primary', onclick: () => rolloverForm(i, openingTx) }, 'Roll over'),
+    i.type === 'fixed_deposit' ? h('button', { onclick: () => liquidationForm(i, openingTx) }, 'Part-liquidate') : null,
     h('button', { onclick: () => maturityForm(i) }, 'Record maturity'), edit);
 }
 

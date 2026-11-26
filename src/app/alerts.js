@@ -1,6 +1,7 @@
 // Alerts from the build plan, computed live from the data (no Firebase here, so they are testable).
 // Each alert clears by itself once the condition is resolved (maturity recorded, cash invested, limit met).
 import { addDays, BusinessCalendar, daysBetween, dec, quarterOf, ZERO } from '../engine/index.js';
+import { fmtNaira } from './ui.js';
 import { closedInstrumentIds, expectedMaturityValue, holdingsOn, navSeries, TYPE_LABELS } from './portfolio.js';
 import { benchmarkFor, completedQuarters } from './close.js';
 import { feedHealth, marketEvents } from './market.js';
@@ -37,7 +38,7 @@ export function counterpartyOf(inst, funds = []) {
   return inst.counterpartyName || TYPE_LABELS[inst.type];
 }
 
-const fmtM = (x) => `₦${Number(dec(x).div(1e6).toFixed(1)).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}m`;
+const fmtM = (x) => fmtNaira(x);
 const pct = (x) => `${dec(x).times(100).toFixed(1)}%`;
 
 /**

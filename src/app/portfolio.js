@@ -1,7 +1,7 @@
 // Turns Firestore documents into engine inputs and answers portfolio questions for the screens.
 // No Firebase imports here, so it is testable in tests/index.html.
 import {
-  addDays, buildDailyNav, daysBetween, dec, eachDay, toKobo, timeWeightedReturn, DAYS_IN_YEAR, FundPriceBook, ONE, Valuer, ZERO,
+  addDays, buildDailyNav, daysBetween, dec, eachDay, toKobo, timeWeightedReturn, DAYS_IN_YEAR, FundPriceBook, FundStatementBook, ONE, Valuer, ZERO,
 } from '../engine/index.js';
 
 const OPENING = new Set(['invest', 'fund_subscription']);
@@ -109,7 +109,10 @@ export function engineInputs(data) {
     id: t.id, date: t.date, type: t.type, amount: t.amount, instrumentId: t.instrumentId, approved: true,
   }));
   const fundPrices = (data.fundPrices ?? []).map((p) => ({ fundId: p.fundId, date: p.date, priceOrYield: p.priceOrYield }));
-  return { transactions, instruments, fundPrices };
+  // Rows uploaded from a fund platform statement carry the day's closing balance (see fundstatement.js).
+  const fundStatements = (data.fundPrices ?? []).filter((p) => p.balance != null && p.balance !== '')
+    .map((p) => ({ fundId: p.fundId, date: p.date, balance: p.balance, rate: p.priceOrYield }));
+  return { transactions, instruments, fundPrices, fundStatements };
 }
 
 /** Daily NAV rows from the first transaction to asOf. Empty when there are no transactions yet. */
@@ -186,20 +189,18 @@ export function periodReport(data, start, end) {
   const twr = period.length ? timeWeightedReturn(period, openingNav) : ZERO;
   const annualised = days >= 1 && twr.gt(-1) ? ONE.plus(twr).pow(DAYS_IN_YEAR.div(days)).minus(ONE) : null;
 
-  // Daily value of every holding over the period, summed by class.
-  const inputs = engineInputs(data);
-  const valuer = new Valuer(new FundPriceBook(inputs.fundPrices));
+  // Daily value of every position (holding, or fund on a statement) over the period, summed by class.
+  const { list } = positionsFor(data);
   const prevDay = addDays(start, -1);
-  const live = inputs.instruments.filter((i) => i.valueDate <= end && (i.closeDate ?? i.maturityDate ?? '9999-12-31') >= prevDay);
-  const classOf = (id) => instruments.get(id)?.type;
+  const live = list.filter((p) => p.start <= end && (p.end ?? '9999-12-31') >= prevDay);
   const blank = () => ({ opening: ZERO, closing: ZERO, invested: ZERO, returned: ZERO, valueDays: ZERO });
   const byClass = new Map();
   const cls = (k) => byClass.get(k) ?? byClass.set(k, blank()).get(k);
   for (const date of [prevDay, ...eachDay(start, end)]) {
-    for (const i of live) {
-      const v = valuer.valueOn(i, date);
+    for (const p of live) {
+      const v = p.value(date);
       if (v.isZero()) continue;
-      const c = cls(classOf(i.id));
+      const c = cls(p.type);
       if (date === prevDay) c.opening = c.opening.plus(v);
       else c.valueDays = c.valueDays.plus(v);
       if (date === end) c.closing = c.closing.plus(v);
@@ -227,14 +228,66 @@ export function periodReport(data, start, end) {
   return { start, end, days, rows: period, allRows: rows, openingNav, closingNav, inflows, withdrawals, fees, netFlow, income, twr, annualised, classes, transactions: txs, counts };
 }
 
-/** Holdings open at the end of a date, valued, with their class. */
+/** Holdings open at the end of a date, valued, with their class. A fund on a statement is one holding. */
 export function holdingsOn(data, date) {
-  const inputs = engineInputs(data);
-  const valuer = new Valuer(new FundPriceBook(inputs.fundPrices));
-  const docs = new Map((data.instruments ?? []).map((i) => [i.id, i]));
-  return inputs.instruments
-    .map((i) => ({ inst: docs.get(i.id), value: valuer.valueOn(i, date) }))
+  return positionsFor(data).list
+    .map((p) => ({ inst: p.inst, value: p.value(date), position: p }))
     .filter((x) => !x.value.isZero());
+}
+
+// Positions for the last few data versions (the yield-accrual cache inside the valuer makes reuse cheap).
+const posCache = [];
+
+/**
+ * Everything valued day by day, as positions: each deal, plus one account per money market fund kept on an
+ * uploaded statement (from its first statement day the fund's deals are valued through the account).
+ * Each position: { id, kind: 'instrument'|'fund', type, label, inst, start, end (exclusive, or null), value(date) }.
+ * For a fund account, inst is a stand-in record (type, fundId, counterpartyName, valueDate) so screens can list it.
+ */
+export function positionsFor(data) {
+  const hit = posCache.find((c) => c.t === data.transactions && c.i === data.instruments && c.p === data.fundPrices && c.f === data.funds);
+  if (hit) return hit.value;
+  const inputs = engineInputs(data);
+  const statements = new FundStatementBook(inputs.fundStatements);
+  const valuer = new Valuer(new FundPriceBook(inputs.fundPrices), statements);
+  const docs = new Map((data.instruments ?? []).map((i) => [i.id, i]));
+  const funds = new Map((data.funds ?? []).map((f) => [f.id, f]));
+  const list = inputs.instruments.map((e) => {
+    const inst = docs.get(e.id);
+    // A fund deal stops at its fund's statement start: from then on the account carries it.
+    const stmt = inst.type === 'money_market_fund' ? statements.start(inst.fundId) : null;
+    let end = e.closeDate ?? (inst.type === 'money_market_fund' ? null : e.maturityDate);
+    if (stmt && (!end || stmt < end)) end = stmt < e.valueDate ? e.valueDate : stmt;
+    return { id: e.id, kind: 'instrument', type: inst.type, label: positionLabel(inst, funds), inst, start: e.valueDate, end, value: (d) => valuer.valueOn(e, d) };
+  });
+  for (const fundId of statements.funds) {
+    const fund = funds.get(fundId);
+    const inst = { id: `fund:${fundId}`, type: 'money_market_fund', fundId, counterpartyName: fund?.managerName || fund?.name || 'Fund', valueDate: statements.start(fundId), statement: true };
+    list.push({ id: inst.id, kind: 'fund', type: 'money_market_fund', label: `${fund?.name ?? 'Fund'} account`, inst, fundId, start: inst.valueDate, end: null, value: (d) => statements.value(fundId, d) });
+  }
+  const value = { list, byId: new Map(list.map((p) => [p.id, p])), statements, valuer };
+  posCache.unshift({ t: data.transactions, i: data.instruments, p: data.fundPrices, f: data.funds, value });
+  posCache.length = Math.min(posCache.length, 4);
+  return value;
+}
+
+const SHORT_TYPE = { ntb: 'NTB', omo: 'OMO', commercial_paper: 'CP', fixed_deposit: 'FD', call_deposit: 'Call', money_market_fund: 'Fund' };
+const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const shortDate = (iso) => (iso ? `${Number(iso.slice(8, 10))} ${MON[Number(iso.slice(5, 7)) - 1]} ${iso.slice(2, 4)}` : '');
+
+/** Short name for a deal: "FD Coronation · 12 Nov 26 → 10 Feb 27". */
+export function positionLabel(inst, funds = new Map()) {
+  const who = inst.type === 'money_market_fund' ? (funds.get(inst.fundId)?.name ?? inst.counterpartyName ?? 'Fund') : (inst.counterpartyName || TYPE_LABELS[inst.type]);
+  const span = inst.maturityDate ? `${shortDate(inst.valueDate)} → ${shortDate(inst.maturityDate)}` : `from ${shortDate(inst.valueDate)}`;
+  return `${SHORT_TYPE[inst.type] ?? inst.type} ${who} · ${span}`;
+}
+
+/** The position a transaction belongs to: its deal, or its fund's statement account once the statement covers the date. */
+export function positionIdOf(t, instruments, statements) {
+  if (!t.instrumentId) return null;
+  const inst = instruments.get(t.instrumentId);
+  if (inst?.type === 'money_market_fund' && statements.covers(inst.fundId, t.date)) return `fund:${inst.fundId}`;
+  return t.instrumentId;
 }
 
 /** Mandate terms in force on a date: the latest version with effectiveFrom <= date. */

@@ -6,7 +6,7 @@ import { rankOpportunities } from './market.js';
 import { expectedMaturityValue, maturityWatch, navSeries, TYPE_LABELS } from './portfolio.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const naira = (x) => `₦${Number(dec(x).toFixed(2)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const naira = (x) => `₦${Number(dec(x).toFixed(0)).toLocaleString('en-US')}`;
 const pct = (x, dp = 2) => `${dec(x).times(100).toFixed(dp)}%`;
 const LEVEL = { high: 'High', medium: 'Medium', low: 'Low' };
 

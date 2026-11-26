@@ -1,12 +1,9 @@
 // Home: one card per section, with a count where something needs attention, under a one-line portfolio summary.
 import { navSeries } from '../portfolio.js';
 import { loadedAll, state } from '../store.js';
-import { fmtDate, h, todayISO } from '../ui.js';
+import { fmtCompact, fmtDate, h, todayISO } from '../ui.js';
 
-const short = (x) => {
-  const n = Number(x);
-  return n >= 1e9 ? `₦${(n / 1e9).toFixed(2)}bn` : `₦${(n / 1e6).toFixed(1)}m`;
-};
+const short = fmtCompact;
 
 export function homeView(_rerender, { sections, counts, icon, countTitle }) {
   const today = todayISO();

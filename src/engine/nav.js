@@ -1,6 +1,6 @@
 import { eachDay } from './dates.js';
 import { ZERO, dec } from './decimal.js';
-import { FundPriceBook, Valuer } from './valuation.js';
+import { FundPriceBook, FundStatementBook, Valuer } from './valuation.js';
 
 /**
  * @typedef {object} DailyNavRow
@@ -51,6 +51,7 @@ export function externalFlow(t) {
  * @param {import('./types.js').Transaction[]} input.transactions
  * @param {import('./types.js').Instrument[]} input.instruments
  * @param {import('./types.js').FundPrice[]} [input.fundPrices]
+ * @param {{fundId: string, date: string, balance: string, rate?: string}[]} [input.fundStatements] fund balances from uploaded statements
  * @param {import('./decimal.js').Num} [input.openingCash] cash before any listed transaction (default 0)
  * @returns {DailyNavRow[]}
  */
@@ -71,11 +72,11 @@ export function buildDailyNav(input) {
     flowByDay.set(t.date, (flowByDay.get(t.date) ?? ZERO).plus(externalFlow(t)));
   }
 
-  const valuer = new Valuer(new FundPriceBook(input.fundPrices ?? []));
+  const valuer = new Valuer(new FundPriceBook(input.fundPrices ?? []), new FundStatementBook(input.fundStatements ?? []));
   const rows = [];
   for (const date of eachDay(input.start, input.end)) {
     cash = cash.plus(cashByDay.get(date) ?? ZERO);
-    let holdingsValue = ZERO;
+    let holdingsValue = valuer.statementTotal(date);
     for (const inst of input.instruments) holdingsValue = holdingsValue.plus(valuer.valueOn(inst, date));
     rows.push({ date, cash, holdingsValue, nav: cash.plus(holdingsValue), netFlow: flowByDay.get(date) ?? ZERO });
   }

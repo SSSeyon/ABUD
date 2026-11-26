@@ -2,13 +2,22 @@ import { BusinessCalendar, daysBetween, dec, managementFeeForPeriod, periodRates
 import { appTerms, auctionYield, benchmarkFor } from '../close.js';
 import { rankOpportunities } from '../market.js';
 import { computeAlerts, limitsFrom } from '../alerts.js';
-import { allocationBar, lineChart } from '../charts.js';
+import { allocationBar, donut, flowsAs, lineChart, sankey, segmented } from '../charts.js';
+import { periodFlows } from '../flows.js';
 import { periodPicker, resolvePeriod, sharedPeriod } from '../period.js';
 import { ASSET_CLASSES, CLASS_LABELS, expectedMaturityValue, holdingsOn, mandateOn, maturityWatch, periodReport, TYPE_LABELS } from '../portfolio.js';
 import { loadedAll, state } from '../store.js';
 import { classTag, fmtDate, fmtNaira, fmtPct, h, table, todayISO } from '../ui.js';
 
 const NEEDS = ['transactions', 'instruments', 'fundPrices', 'mandateTerms', 'funds'];
+
+/** A remembered display choice (per browser); falls back when storage is blocked or the value is unknown. */
+function pref(key, allowed, fallback) {
+  let v = null;
+  try { v = localStorage.getItem(key); } catch { v = null; }
+  return allowed.includes(v) ? v : fallback;
+}
+function savePref(key, v) { try { localStorage.setItem(key, v); } catch { /* this visit only */ } }
 
 function stat(label, value, note, tone) {
   return h('div', { class: `stat ${tone ?? ''}` }, h('div', { class: 'stat-label' }, label), h('div', { class: 'stat-value' }, value), note ? h('div', { class: 'stat-note' }, note) : null);
@@ -95,11 +104,28 @@ export function dashboardView(rerender) {
     ...ASSET_CLASSES.filter((c) => c.key !== 'cash').map((c) => ({ ...c, value: held.filter((x) => x.inst?.type === c.key).reduce((t, x) => t.plus(x.value), dec(0)) })),
     { key: 'cash', label: CLASS_LABELS.cash, value: endRow?.cash ?? dec(0) },
   ];
+  const allocKind = pref('abud-alloc-chart', ['bar', 'donut'], 'bar');
   parts.push(
     h('div', { class: 'grid-2' },
       h('section', { class: 'card' }, h('h2', null, `Net asset value: ${fmtDate(period.start)} – ${fmtDate(period.end)}`), lineChart(r.rows.map((x) => ({ date: x.date, value: x.nav })), { label: 'NAV' })),
-      h('section', { class: 'card' }, h('h2', null, `Allocation ${at}`), allocationBar(alloc))),
+      h('section', { class: 'card' },
+        h('div', { class: 'card-head' }, h('h2', null, `Allocation ${at}`),
+          segmented([['bar', 'Bar'], ['donut', 'Donut']], allocKind, (v) => { savePref('abud-alloc-chart', v); rerender(); })),
+        allocKind === 'donut'
+          ? donut(alloc.map((c) => ({ label: c.label, value: c.value, color: `var(--class-${c.key})` })), { label: 'Allocation', centre: 'NAV' })
+          : allocationBar(alloc))),
   );
+
+  // Money flows for the period, as a Sankey, bars or donuts.
+  const flowKind = pref('abud-flow-chart', ['sankey', 'bars', 'donut'], 'sankey');
+  try {
+    const f = periodFlows(r);
+    parts.push(h('section', { class: 'card' },
+      h('div', { class: 'card-head' }, h('h2', null, `Money flows: ${fmtDate(period.start)} – ${fmtDate(period.end)}`),
+        segmented([['sankey', 'Sankey'], ['bars', 'Bar'], ['donut', 'Donut']], flowKind, (v) => { savePref('abud-flow-chart', v); rerender(); })),
+      flowKind === 'sankey' ? sankey(f.left, f.right, { middle: 'Portfolio', label: 'Money flows for the period' }) : flowsAs(flowKind, f.left, f.right),
+      h('p', { class: 'muted small' }, 'Opening NAV + inflows + income = withdrawals + fees + closing NAV. ', h('a', { href: '#/navdaily' }, 'Daily NAV make-up'))));
+  } catch (err) { console.error(err); }
 
   // Maturities ahead (always from today).
   const { due, overdue } = maturityWatch(data, today, 14);

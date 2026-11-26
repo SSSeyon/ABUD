@@ -33,12 +33,22 @@ export function fmtDate(iso) {
   return `${Number(d)} ${MONTHS[Number(m) - 1]} ${y}`;
 }
 
+/** Naira on screen: whole naira, rounded half up (figures keep full precision underneath and in Excel). */
 export function fmtNaira(x) {
   if (x == null || x === '') return '—';
-  const s = dec(x).toFixed(2);
-  const neg = s.startsWith('-');
-  const [i, f] = s.replace('-', '').split('.');
-  return `${neg ? '−' : ''}₦${i.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}.${f}`;
+  const s = dec(x).toFixed(0);
+  const neg = s.startsWith('-') && s !== '-0';
+  return `${neg ? '−' : ''}₦${s.replace('-', '').replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`;
+}
+
+/** Short naira for chart labels and tight spaces, still without decimals: ₦4,152m, ₦85k, ₦640. */
+export function fmtCompact(x) {
+  const n = Number(x);
+  const a = Math.abs(n);
+  const sign = n < 0 ? '−' : '';
+  if (a >= 1e6) return `${sign}₦${Math.round(a / 1e6).toLocaleString('en-US')}m`;
+  if (a >= 1e3) return `${sign}₦${Math.round(a / 1e3)}k`;
+  return `${sign}₦${Math.round(a)}`;
 }
 
 /** A fraction shown as a percentage: 0.0075 -> "0.750%". */
@@ -95,7 +105,7 @@ export function errorText(err) {
  * types: text, date, money, percent, decimal, number, select, textarea, checkboxes.
  * onSubmit(values) may throw; its message shows in the form. Resolves true when saved.
  */
-export function openForm({ title, intro, fields, submitLabel = 'Save', onSubmit }) {
+export function openForm({ title, intro, fields, submitLabel = 'Save', onSubmit, preview }) {
   return new Promise((resolve) => {
     const dialog = h('dialog', { class: 'modal', 'aria-label': title });
     const rows = {};
@@ -151,9 +161,16 @@ export function openForm({ title, intro, fields, submitLabel = 'Save', onSubmit 
       return v;
     };
     const visible = (f, v) => !f.showIf || f.showIf(v);
+    // Optional live preview under the fields: preview(values) returns a node or text; a thrown error shows as a note.
+    const previewBox = preview ? h('div', { class: 'form-preview', 'aria-live': 'polite' }) : null;
     const refresh = () => {
       const v = values();
       for (const f of fields) rows[f.name].hidden = !visible(f, v);
+      if (previewBox) {
+        let out;
+        try { out = preview(v); } catch (err) { out = h('p', { class: 'muted' }, err.message); }
+        previewBox.replaceChildren(...(out == null ? [] : [out]));
+      }
     };
 
     const errorBox = h('div', { class: 'form-error', role: 'alert' });
@@ -164,6 +181,7 @@ export function openForm({ title, intro, fields, submitLabel = 'Save', onSubmit 
       h('h2', null, title),
       intro ? h('p', { class: 'muted' }, intro) : null,
       fieldEls,
+      previewBox,
       errorBox,
       h('div', { class: 'actions' }, h('button', { type: 'button', onclick: () => dialog.close() }, 'Cancel'), submit),
     );
@@ -276,15 +294,15 @@ export function downloadCsv(filename, rows) {
 // SheetJS is loaded from jsDelivr the first time a workbook is downloaded. Figures go out as Excel numbers
 // (converted from the exact decimals at the last step, for display only) with a number format.
 
-/** Money cell: a number formatted #,##0.00. */
-export const xMoney = (x) => (x == null || x === '' ? '' : { t: 'n', v: Number(x.toString()), z: '#,##0.00' });
+/** Money cell: a number formatted #,##0 (whole naira shown, full value kept). */
+export const xMoney = (x) => (x == null || x === '' ? '' : { t: 'n', v: Number(x.toString()), z: '#,##0' });
 /** Percentage cell from a fraction: 0.0489 shows as 4.890%. */
 export const xPct = (x, dp = 3) => (x == null || x === '' ? '' : { t: 'n', v: Number(x.toString()), z: `0.${'0'.repeat(dp)}%` });
 /** Date cell from an ISO date (Excel date, shown dd-mmm-yyyy). */
 export const xDate = (iso) => (iso ? { t: 'd', v: new Date(`${iso}T00:00:00Z`), z: 'dd-mmm-yyyy' } : '');
 
 let xlsxLib = null;
-async function sheetJs() {
+export async function sheetJs() {
   xlsxLib ??= import('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/xlsx.mjs');
   return xlsxLib;
 }

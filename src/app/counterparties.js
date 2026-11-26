@@ -2,6 +2,7 @@
 // limit, and exposure by counterparty and by custodian. Pure functions over the loaded data (testable).
 import { dec, ZERO } from '../engine/index.js';
 import { holdingsOn, navSeries, TYPE_LABELS } from './portfolio.js';
+import { fmtNaira } from './ui.js';
 
 /** Long-term national scale, best first. Agusto, GCR, DataPro, Fitch and S&P all map onto it. */
 export const RATING_SCALE = ['AAA', 'AA+', 'AA', 'AA-', 'A+', 'A', 'A-', 'BBB+', 'BBB', 'BBB-', 'BB+', 'BB', 'BB-', 'B+', 'B', 'B-', 'CCC', 'CC', 'C', 'D'];
@@ -143,9 +144,9 @@ export function ratingAlerts(data, today, minRating) {
   const unrated = [];
   for (const e of ex.filter((x) => !x.fgn)) {
     if (!e.rating) { unrated.push(e.name); continue; }
-    if (e.below) out.push({ key: `rating-low-${e.name}`, level: 'high', title: `Rating below minimum: ${e.name} (${e.rating.rating})`, detail: `₦${(Number(e.value) / 1e6).toFixed(1)}m held. ${e.rating.agency} rated it ${e.rating.rating} on ${e.rating.date}; the minimum is ${minRating}. Plan an exit at maturity or earlier.`, route: 'counterparties', sort: e.rating.date });
+    if (e.below) out.push({ key: `rating-low-${e.name}`, level: 'high', title: `Rating below minimum: ${e.name} (${e.rating.rating})`, detail: `${fmtNaira(e.value)} held. ${e.rating.agency} rated it ${e.rating.rating} on ${e.rating.date}; the minimum is ${minRating}. Plan an exit at maturity or earlier.`, route: 'counterparties', sort: e.rating.date });
     for (const d of recentDowngrades(data, e.cp.id, today)) {
-      out.push({ key: `downgrade-${e.name}-${d.agency}-${d.date}`, level: 'medium', title: `Downgrade: ${e.name} ${d.from} → ${d.to} (${d.agency})`, detail: `On ${d.date}. ₦${(Number(e.value) / 1e6).toFixed(1)}m held (${dec(e.share).times(100).toFixed(1)}% of NAV).`, route: 'counterparties', sort: d.date });
+      out.push({ key: `downgrade-${e.name}-${d.agency}-${d.date}`, level: 'medium', title: `Downgrade: ${e.name} ${d.from} → ${d.to} (${d.agency})`, detail: `On ${d.date}. ${fmtNaira(e.value)} held (${dec(e.share).times(100).toFixed(1)}% of NAV).`, route: 'counterparties', sort: d.date });
     }
   }
   if (unrated.length) out.push({ key: `unrated-${unrated.length}`, level: 'low', title: `${unrated.length} counterpart${unrated.length === 1 ? 'y has' : 'ies have'} no rating recorded`, detail: `${unrated.slice(0, 5).join(', ')}${unrated.length > 5 ? '…' : ''}. Add them on the Counterparties screen.`, route: 'counterparties', sort: today });

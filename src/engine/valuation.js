@@ -40,19 +40,73 @@ export class FundPriceBook {
 }
 
 /**
+ * Fund account statements uploaded from the investment platform: the closing balance per day.
+ * From a fund's first statement day on, the fund is valued at the statement balance instead of holding by holding
+ * (the statement already reflects every subscription, partial redemption and the platform's own earnings).
+ * After its last row the balance accrues simply at the last rate (Actual/365) until the next upload.
+ */
+export class FundStatementBook {
+  /** @param {Iterable<{fundId: string, date: string, balance: import('./decimal.js').Num, rate?: import('./decimal.js').Num}>} [rows] */
+  constructor(rows = []) {
+    /** @type {Map<string, {date: string, balance: import('./decimal.js').Dec, rate: import('./decimal.js').Dec}[]>} */
+    this.byFund = new Map();
+    for (const r of rows) {
+      if (r.balance == null || r.balance === '') continue;
+      const list = this.byFund.get(r.fundId) ?? [];
+      list.push({ date: r.date, balance: dec(r.balance), rate: r.rate == null || r.rate === '' ? ZERO : dec(r.rate) });
+      this.byFund.set(r.fundId, list);
+    }
+    for (const list of this.byFund.values()) list.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  }
+
+  get funds() { return [...this.byFund.keys()]; }
+
+  /** First statement day of a fund, or null. */
+  start(fundId) { return this.byFund.get(fundId)?.[0]?.date ?? null; }
+
+  /** Whether the statement values this fund on the date. */
+  covers(fundId, date) {
+    const s = this.start(fundId);
+    return s !== null && date >= s;
+  }
+
+  /** Balance at the end of the date (ZERO before the first statement day). */
+  value(fundId, date) {
+    let last = null;
+    for (const r of this.byFund.get(fundId) ?? []) {
+      if (r.date > date) break;
+      last = r;
+    }
+    if (!last) return ZERO;
+    if (last.date === date || last.rate.isZero()) return last.balance;
+    return last.balance.plus(last.balance.times(last.rate).times(daysBetween(last.date, date)).div(DAYS_IN_YEAR));
+  }
+}
+
+/**
  * Values each holding at end of day. Elapsed days count from the value date,
  * so a holding is worth its cost at the end of its value date.
  */
 export class Valuer {
-  /** @param {FundPriceBook} [prices] */
-  constructor(prices = new FundPriceBook()) {
+  /** @param {FundPriceBook} [prices] @param {FundStatementBook} [statements] */
+  constructor(prices = new FundPriceBook(), statements = new FundStatementBook()) {
     this.prices = prices;
+    this.statements = statements;
     /** Yield-basis funds: cumulative accrual per holding. */
     this.yieldAccrual = new Map();
   }
 
+  /** Total of every statement-valued fund on the date. */
+  statementTotal(date) {
+    let t = ZERO;
+    for (const f of this.statements.funds) t = t.plus(this.statements.value(f, date));
+    return t;
+  }
+
   /** @param {import('./types.js').Instrument} inst @param {string} date */
   valueOn(inst, date) {
+    // A fund on a statement is valued as one account (statementTotal), not holding by holding.
+    if (inst.type === 'money_market_fund' && this.statements.covers(inst.fundId, date)) return ZERO;
     if (!isHeld(inst, date)) return ZERO;
     const elapsed = daysBetween(inst.valueDate, date);
 

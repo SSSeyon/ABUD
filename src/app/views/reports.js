@@ -1,8 +1,7 @@
 // Period report: pick a period, see NAV movement, return, income by asset class, transactions and holdings.
 import { addDays, dec } from '../../engine/index.js';
 import { periodPicker, resolvePeriod, sharedPeriod } from '../period.js';
-import { allocationBar, lineChart, sankey } from '../charts.js';
-import { periodFlows } from '../flows.js';
+import { allocationBar, lineChart } from '../charts.js';
 import { ASSET_CLASSES, CLASS_LABELS, holdingsOn, periodReport, txClass, TX_LABELS, TX_SIGN, TYPE_LABELS } from '../portfolio.js';
 import { loadedAll, state } from '../store.js';
 import { classTag, excelButton, fmtDate, fmtNaira, fmtPct, h, table, todayISO, xDate, xMoney, xPct } from '../ui.js';
@@ -25,7 +24,8 @@ export function reportsView(rerender) {
   const period = resolvePeriod(sharedPeriod, inception, today);
   const { start, end } = period;
   const picker = h('div', { class: 'toolbar no-print' }, periodPicker(sharedPeriod, inception, today, rerender), h('button', { onclick: () => window.print() }, 'Print / PDF'),
-    excelButton('Download Excel', () => `ABUD report  to .xlsx`, () => reportWorkbook(data, periodReport(data, start, end))),
+    excelButton('Download Excel', () => `ABUD report ${start} to ${end}.xlsx`, () => reportWorkbook(data, periodReport(data, start, end))),
+    h('a', { class: 'button-link', href: '#/navdaily' }, 'Daily NAV make-up →'),
     h('a', { class: 'button-link', href: '#/management' }, 'Management report →'));
 
   const head = h('div', { class: 'page-head' }, h('div', null, h('h1', null, `Portfolio report: ${period.key === 'custom' ? 'custom period' : period.label}`), h('p', { class: 'subtitle' }, `Access Holdings Plc unclaimed dividend portfolio · ${fmtDate(start)} to ${fmtDate(end)}`)));
@@ -111,9 +111,6 @@ export function reportsView(rerender) {
           h('tr', { class: i === 0 || i === bridge.length - 1 ? 'total' : null },
             h('td', null, label, note ? h('div', { class: 'muted small' }, note) : null),
             h('td', { class: `num ${v.isNegative() ? 'neg' : ''}` }, fmtNaira(v)))))))),
-    h('section', { class: 'card' }, h('h2', null, 'Where the money came from and went'),
-      h('p', { class: 'muted small' }, 'Opening NAV, inflows and income on the left; withdrawals, fees and what is held at the end, by asset class, on the right. Hover a band for its value.'),
-      (() => { const f = periodFlows(r); return sankey(f.left, f.right, { middle: 'Portfolio', label: 'Money flows for the period' }); })()),
     h('section', { class: 'card' }, h('h2', null, 'By asset class'),
       h('p', { class: 'muted small' }, 'Income = closing value − opening value − money invested + money returned. Yield is income over the average value held, annualised.'),
       table(['Asset class', { label: 'Opening value', num: true }, { label: 'Invested', num: true }, { label: 'Returned', num: true }, { label: 'Income', num: true }, { label: 'Yield p.a.', num: true }, { label: 'Closing value', num: true }], classRows)),

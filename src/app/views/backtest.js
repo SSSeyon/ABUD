@@ -7,14 +7,14 @@ import { runBacktest } from '../backtest.js';
 import { groupedBars } from '../charts.js';
 import { READINGS } from '../close.js';
 import { loadedAll, state } from '../store.js';
-import { downloadCsv, excelButton, fmtDate, fmtNaira, fmtPct, h, openForm, parseMoney, runAction, table, todayISO, xMoney, xPct } from '../ui.js';
+import { downloadCsv, excelButton, fmtCompact, fmtDate, fmtNaira, fmtPct, h, openForm, parseMoney, runAction, table, todayISO, xMoney, xPct } from '../ui.js';
 
 const NEEDS = ['transactions', 'instruments', 'fundPrices', 'mandateTerms', 'funds', 'auctions'];
 const sel = { feeDayCount: 'quarterly', reading: 'worksheet', from: '', to: '' };
 let cache = { key: null, result: null };
 
 const pctDiff = (a, b) => (dec(b).isZero() ? null : dec(a).minus(b).div(b));
-const fmtM = (x) => `₦${(Number(x) / 1e6).toFixed(2)}m`;
+const fmtM = (x) => fmtCompact(x);
 
 function compute(data, today) {
   const key = [data.transactions, data.instruments, data.fundPrices, data.auctions, data.mandateTerms, data.invoices, sel.feeDayCount, sel.reading, sel.from, sel.to, today];

@@ -22,6 +22,7 @@ import { counterpartiesView } from './views/counterparties.js';
 import { managementView } from './views/management.js';
 import { terminationView } from './views/termination.js';
 import { homeView } from './views/home.js';
+import { navDailyView } from './views/navdaily.js';
 
 // Simple line icons (24px grid, drawn with currentColor).
 export const ICONS = {
@@ -33,6 +34,8 @@ export const ICONS = {
   market: 'M3 17l6-6 4 4 8-8M15 7h6v6',
   reports: 'M5 21V10m7 11V4m7 17v-7',
   fees: 'M12 3v18M16.5 7.5c0-1.7-2-3-4.5-3s-4.5 1.3-4.5 3 2 2.6 4.5 3 4.5 1.3 4.5 3-2 3-4.5 3-4.5-1.3-4.5-3',
+  sun: 'M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10zM12 1v2m0 18v2M4.2 4.2l1.4 1.4m12.8 12.8 1.4 1.4M1 12h2m18 0h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4',
+  moon: 'M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z',
   settings: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm7.4-3a7.4 7.4 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7.6 7.6 0 0 0-2-1.2L14.5 3h-5l-.4 2.6a7.6 7.6 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6a7.4 7.4 0 0 0 0 2.4l-2 1.6 2 3.4 2.4-1a7.6 7.6 0 0 0 2 1.2l.4 2.6h5l.4-2.6a7.6 7.6 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2z',
 };
 
@@ -48,6 +51,7 @@ const ROUTES = {
   market: { label: 'Market', view: marketView },
   counterparties: { label: 'Counterparties', view: counterpartiesView },
   reports: { label: 'Portfolio report', view: reportsView },
+  navdaily: { label: 'Daily NAV', view: navDailyView },
   management: { label: 'Management report', view: managementView },
   close: { label: 'Quarter close', view: closeView },
   backtest: { label: 'Back-test', view: backtestView },
@@ -62,7 +66,7 @@ export const SECTIONS = [
   { id: 'holdings', label: 'Holdings', desc: 'Positions, deals and the maturity ladder', routes: ['holdings', 'ladder'], color: '#2a78d6' },
   { id: 'transactions', label: 'Transactions', desc: 'Cash movements and change history', routes: ['transactions', 'history'], color: '#6250d6' },
   { id: 'market', label: 'Market', desc: 'Auctions, CP, news, counterparties', routes: ['market', 'counterparties'], color: '#008a5e' },
-  { id: 'reports', label: 'Reports', desc: 'Period report, money flows, management report', routes: ['reports', 'management'], color: '#db2777' },
+  { id: 'reports', label: 'Reports', desc: 'Period report, daily NAV make-up, management report', routes: ['reports', 'navdaily', 'management'], color: '#db2777' },
   { id: 'fees', label: 'Fees', desc: 'Quarter close, back-test, termination', routes: ['close', 'backtest', 'termination'], color: '#b45309' },
   { id: 'settings', label: 'Settings', desc: 'Terms, limits, funds, import, backup', routes: ['settings'], color: '#475569' },
 ];
@@ -97,13 +101,21 @@ function brand(cls = 'brand') {
     h('span', { class: 'brand-app' }, 'ABUD Portfolio'));
 }
 
+/** Today's alerts, or [] until the data is in. */
+function currentAlerts() {
+  const data = state.data;
+  if (!['transactions', 'instruments', 'fundPrices'].every((n) => state.loaded.has(n))) return [];
+  const today = todayISO();
+  try { return computeAlerts(data, today, limitsFrom(data, today)); } catch { return []; }
+}
+
 /** Badge numbers per section: high alerts, maturities overdue or due this week, last quarter not closed. */
-function sectionCounts() {
+function sectionCounts(alerts) {
   const data = state.data;
   const out = {};
   if (!['transactions', 'instruments', 'fundPrices'].every((n) => state.loaded.has(n))) return out;
   const today = todayISO();
-  try { out.alerts = computeAlerts(data, today, limitsFrom(data, today)).filter((a) => a.level === 'high').length; } catch { /* ignore */ }
+  out.alerts = alerts.filter((a) => a.level === 'high').length;
   try { const w = maturityWatch(data, today, 7); out.holdings = w.overdue.length + w.due.length; } catch { /* ignore */ }
   if (Array.isArray(data.quarterlyResults)) {
     const inception = (data.transactions ?? []).reduce((m, t) => (!m || t.date < m ? t.date : m), '');
@@ -115,11 +127,60 @@ function sectionCounts() {
 }
 const COUNT_TITLE = { alerts: 'high-priority alerts', holdings: 'maturities overdue or due this week', fees: 'quarter waiting to be closed', transactions: 'change history not switched on' };
 
+// ---------- Theme (light / dark), saved per browser; index.html applies it before the first paint ----------
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch { /* storage blocked: the choice lasts this visit */ } },
+};
+function setTheme(t) {
+  document.documentElement.dataset.theme = t;
+  store.set('abud-theme', t);
+  render();
+}
+function themeButton() {
+  const dark = document.documentElement.dataset.theme === 'dark';
+  return h('button', { class: 'icon-btn', title: dark ? 'Switch to light mode' : 'Switch to dark mode', 'aria-label': dark ? 'Switch to light mode' : 'Switch to dark mode', onclick: () => setTheme(dark ? 'light' : 'dark') },
+    icon(dark ? 'sun' : 'moon', 20));
+}
+
+// ---------- Notifications: today's alerts, with the ones not yet opened counted on the bell ----------
+const notif = { open: false };
+function seenKeys() {
+  try { return new Set(JSON.parse(store.get('abud-seen-alerts') ?? '[]')); } catch { return new Set(); }
+}
+function markSeen(keys) {
+  const seen = seenKeys();
+  for (const k of keys) seen.add(k);
+  store.set('abud-seen-alerts', JSON.stringify([...seen].slice(-500)));
+}
+function notifications(alerts) {
+  const seen = seenKeys();
+  const unseen = alerts.filter((a) => !seen.has(a.key));
+  const bell = h('button', { class: 'icon-btn bell', 'aria-haspopup': 'true', 'aria-expanded': notif.open ? 'true' : 'false', title: 'Notifications', 'aria-label': `Notifications${unseen.length ? `: ${unseen.length} new` : ''}`, onclick: (e) => { e.stopPropagation(); notif.open = !notif.open; render(); } },
+    icon('alerts', 20), unseen.length ? h('span', { class: 'bell-count' }, unseen.length > 99 ? '99+' : String(unseen.length)) : null);
+  const panel = notif.open
+    ? h('div', { class: 'notif-panel', role: 'dialog', 'aria-label': 'Notifications', onclick: (e) => e.stopPropagation() },
+        h('div', { class: 'notif-head' }, h('strong', null, 'Notifications'),
+          unseen.length ? h('button', { class: 'link', onclick: () => { markSeen(alerts.map((a) => a.key)); render(); } }, 'Mark all as read') : null),
+        alerts.length
+          ? h('ul', { class: 'notif-list' }, alerts.slice(0, 30).map((a) => h('li', { class: seen.has(a.key) ? 'read' : 'unread' },
+              h('a', { href: `#/${a.route}`, onclick: () => { markSeen([a.key]); notif.open = false; } },
+                h('span', { class: `alert-level ${a.level}` }, a.level === 'high' ? 'High' : a.level === 'medium' ? 'Medium' : 'Low'),
+                h('span', { class: 'notif-text' }, h('span', { class: 'notif-title' }, a.title), h('span', { class: 'muted small' }, a.detail))))))
+          : h('p', { class: 'muted notif-empty' }, 'Nothing needs attention.'),
+        h('a', { class: 'notif-all', href: '#/alerts', onclick: () => { notif.open = false; } }, 'See all alerts'))
+    : null;
+  return h('div', { class: 'notif-wrap' }, bell, panel);
+}
+document.addEventListener('click', () => { if (notif.open) { notif.open = false; render(); } });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && notif.open) { notif.open = false; render(); } });
+
 function render() {
   const key = currentRoute();
   const section = sectionOf(key);
   const errors = Object.entries(state.errors).filter(([name]) => !OPTIONAL.has(name));
-  const counts = sectionCounts();
+  const alerts = currentAlerts();
+  const counts = sectionCounts(alerts);
   let content;
   try {
     content = key === 'home' ? homeView(render, { sections: SECTIONS, counts, icon, countTitle: COUNT_TITLE }) : ROUTES[key].view(render);
@@ -149,7 +210,8 @@ function render() {
         h('div', { class: 'sidebar-foot' }, h('div', null, 'Access Holdings Plc'), h('div', { class: 'muted' }, 'Unclaimed dividend pool'))),
       h('header', { class: 'topbar' },
         brand('brand brand-top'),
-        h('span', { class: 'topbar-title' }, title)),
+        h('span', { class: 'topbar-title' }, title),
+        h('div', { class: 'top-actions' }, notifications(alerts), themeButton())),
       h('main', { class: 'page' },
         errors.length ? h('div', { class: 'card bad' }, `Could not load: ${errors.map(([name, msg]) => `${name} (${msg})`).join('; ')}`) : null,
         state.stalled
