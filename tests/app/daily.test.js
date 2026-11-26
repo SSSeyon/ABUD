@@ -1,6 +1,6 @@
 import { describe, expect, it } from '../harness.js';
 import { dec, FundStatementBook } from '../../src/engine/index.js';
-import { dailyBreakdown, positionStatement } from '../../src/app/daily.js';
+import { cashStatement, dailyBreakdown, positionStatement } from '../../src/app/daily.js';
 import { cellDate, parseStatement, statementPlan } from '../../src/app/fundstatement.js';
 import { partialLiquidationPlan } from '../../src/app/liquidation.js';
 import { engineInputs, holdingsOn, navSeries, periodReport } from '../../src/app/portfolio.js';
@@ -157,5 +157,13 @@ describe('daily NAV make-up and holding statements', () => {
     expect(money(s.rows[1].income)).toBe('400.00');
     expect(money(s.rows[3].out)).toBe('731200.00');
     expect(money(s.rows[3].close)).toBe('0.00');
+  });
+  it('the cash statement: money in and out each day, no unexplained income', () => {
+    const c = cashStatement(data, '2026-03-01', '2026-03-05');
+    expect(money(c.rows[0].in)).toBe('1000000.00');
+    expect(money(c.rows[0].out)).toBe('730000.00');
+    expect(money(c.rows[0].close)).toBe('270000.00');
+    expect(money(c.total.close)).toBe(money(dec('1000000').minus('730000').minus('200000').minus('100').plus('731200')));
+    expect(c.rows.every((r) => r.income.isZero())).toBe(true);
   });
 });

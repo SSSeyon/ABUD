@@ -4,7 +4,7 @@ import { createDeal, partialLiquidate, rollOverDeal, saveFundPrice, saveTransact
 import { partialLiquidationPlan, PENALTY_BASES } from '../liquidation.js';
 import { openHoldingStatement } from './holdingdetail.js';
 import { openFundUpload } from './fundupload.js';
-import { ASSET_CLASSES, closedInstrumentIds, DEPOSIT_TYPES, engineInputs, expectedMaturityValue, openingTransactions, positionsFor, toEngineInstrument, TYPE_LABELS } from '../portfolio.js';
+import { ASSET_CLASSES, closedInstrumentIds, DEPOSIT_TYPES, engineInputs, expectedMaturityValue, navSeries, openingTransactions, positionsFor, toEngineInstrument, TYPE_LABELS } from '../portfolio.js';
 import { loadedAll, state } from '../store.js';
 import { classTag, excelButton, fmtDate, fmtNaira, fmtPct, h, openForm, parseDecimal, parseMoney, parsePercent, table, toast, todayISO, xDate, xMoney, xPct } from '../ui.js';
 import { counterpartyName, custodianExposure, dealRatingCheck } from '../counterparties.js';
@@ -75,6 +75,7 @@ export function holdingsView(rerender) {
   const rows = [];
   let total = dec(0);
   for (const c of ASSET_CLASSES) {
+    if (c.key === 'call_deposit' || c.key === 'cash') continue;
     const group = live.filter((i) => i.type === c.key);
     const accts = c.key === 'money_market_fund' ? accounts : [];
     if (!group.length && !accts.length) continue;
@@ -86,7 +87,20 @@ export function holdingsView(rerender) {
     accts.forEach((p, n) => rows.push(accountRow(p, acctValues[n], statements, today)));
     group.forEach((i, n) => rows.push(row(i, values[n])));
   }
-  if (rows.length) rows.push(h('tr', { class: 'total' }, h('td', { colspan: 8 }, 'Total holdings'), h('td', { class: 'num' }, fmtNaira(total)), h('td', null)));
+  // Cash and call deposits, last: the uninvested balance (from the NAV series) and any open calls.
+  const calls = live.filter((i) => i.type === 'call_deposit');
+  const cashShown = (!filt.type || filt.type === 'call_deposit') && !filt.counterparty && !filt.custodian && !horizon;
+  const cash = cashShown ? (navSeries(data, today).at(-1)?.cash ?? dec(0)) : null;
+  const showCash = cash && !cash.isZero() && (!q || 'cash at bank'.includes(q));
+  if (calls.length || showCash) {
+    const values = calls.map(valueOf);
+    const sub = values.reduce((t, v) => (typeof v === 'string' ? t : t.plus(v)), showCash ? cash : dec(0));
+    total = total.plus(sub);
+    rows.push(h('tr', { class: 'group' }, h('td', { colspan: 8 }, classTag('call_deposit', 'Cash and call deposits'), h('span', { class: 'muted' }, ` · ${calls.length + (showCash ? 1 : 0)}`)), h('td', { class: 'num' }, fmtNaira(sub)), h('td', null)));
+    if (showCash) rows.push(cashRow(cash));
+    calls.forEach((i, n) => rows.push(row(i, values[n])));
+  }
+  if (rows.length) rows.push(h('tr', { class: 'total' }, h('td', { colspan: 8 }, showCash ? 'Total portfolio (NAV)' : 'Total holdings'), h('td', { class: 'num' }, fmtNaira(total)), h('td', null)));
 
   const sel = (label, key, options) => h('label', { class: 'period-picker' }, h('span', { class: 'period-label' }, label),
     h('select', { class: 'period-select', onchange: (e) => { filt[key] = e.target.value; rerender(); } },
@@ -96,12 +110,12 @@ export function holdingsView(rerender) {
   const toolbar = h('div', { class: 'toolbar no-print' },
     h('label', { class: 'period-picker' }, h('span', { class: 'period-label' }, 'Search'),
       h('input', { type: 'search', value: filt.q, placeholder: 'Counterparty, custodian, fund', onchange: (e) => { filt.q = e.target.value; rerender(); } })),
-    sel('Class', 'type', ASSET_CLASSES.filter((c) => allLive.some((i) => i.type === c.key)).map((c) => [c.key, c.label])),
+    sel('Class', 'type', ASSET_CLASSES.filter((c) => c.key === 'call_deposit' || allLive.some((i) => i.type === c.key)).map((c) => [c.key, c.key === 'call_deposit' ? 'Cash and call deposits' : c.label])),
     sel('Counterparty', 'counterparty', uniq(allLive.map(cpOf))),
     sel('Custodian', 'custodian', uniq(allLive.map((i) => i.custodianName?.trim() || 'Not recorded'))),
     sel('Maturing within', 'within', [['7', '7 days'], ['30', '30 days'], ['90', '90 days'], ['182', '6 months']]),
     filtered ? h('button', { onclick: () => { Object.keys(filt).forEach((k) => { filt[k] = ''; }); rerender(); } }, 'Clear filters') : null,
-    excelButton('Download Excel', () => `ABUD holdings ${today}.xlsx`, () => holdingsWorkbook(data, live, valueOf, cpOf, today)));
+    excelButton('Download Excel', () => `ABUD holdings ${today}.xlsx`, () => holdingsWorkbook(data, live, valueOf, cpOf, today, showCash ? cash : null)));
 
   let custodians = [];
   try { custodians = custodianExposure(data, today); } catch { custodians = []; }
@@ -126,6 +140,18 @@ export function holdingsView(rerender) {
         'No holdings.'),
       h('p', { class: 'muted small' }, 'Custodians come from each deal. Keep the names consistent with the register on the Counterparties screen.')),
   );
+}
+
+/** The uninvested cash balance: one row; click for its daily statement. */
+function cashRow(cash) {
+  const open = (e) => { if (!e.target.closest('button, a')) openHoldingStatement('cash'); };
+  return h('tr', { class: 'clickable', tabindex: 0, title: 'Open the daily statement', onclick: open,
+    onkeydown: (e) => { if (e.key === 'Enter' && e.target === e.currentTarget) openHoldingStatement('cash'); } },
+    h('td', null, 'Cash at bank', h('div', { class: 'muted' }, 'Not yet invested')),
+    h('td', null, ''), h('td', { class: 'num' }, '—'), h('td', { class: 'num' }, '—'), h('td', null, '—'),
+    h('td', null, ''), h('td', null, 'On call'), h('td', { class: 'num' }, ''),
+    h('td', { class: 'num' }, fmtNaira(cash)),
+    h('td', null, h('div', { class: 'row-actions' }, h('button', { onclick: () => openHoldingStatement('cash') }, 'Statement'))));
 }
 
 /** A fund kept on uploaded statements: one row, valued at the statement balance. */
@@ -199,7 +225,7 @@ function checkRating(data, inst, date = todayISO()) {
   if (msg) throw new Error(msg);
 }
 
-function holdingsWorkbook(data, live, valueOf, cpOf, today) {
+function holdingsWorkbook(data, live, valueOf, cpOf, today, cash) {
   const funds = new Map((data.funds ?? []).map((f) => [f.id, f]));
   const rows = [['Class', 'Instrument', 'Fund', 'Counterparty', 'Custodian', 'Cost', 'At maturity', 'Rate', 'Discount rate', 'Value date', 'Maturity', 'Days left', `Value at ${today}`]];
   for (const i of live) {
@@ -210,6 +236,7 @@ function holdingsWorkbook(data, live, valueOf, cpOf, today) {
       xDate(i.valueDate), xDate(i.maturityDate), i.maturityDate ? daysBetween(today, i.maturityDate) : '', typeof v === 'string' ? v : xMoney(v),
     ]);
   }
+  if (cash) rows.push(['Cash and call deposits', 'Cash at bank', '', '', '', '', '', '', '', '', '', '', xMoney(cash)]);
   return [{ name: 'Holdings', rows }];
 }
 

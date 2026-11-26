@@ -105,3 +105,39 @@ export function positionStatement(data, positionId, start, end) {
   const b = dailyBreakdown(data, start, end, { only: positionId });
   return { position: b.positions[0] ?? null, rows: b.days.filter((d) => d.byPos.has(positionId)).map((d) => ({ date: d.date, ...d.byPos.get(positionId) })), total: b.totals.get(positionId) ?? null };
 }
+
+const CASH_IN = new Set(['inflow', 'mature', 'fund_redemption', 'interest']);
+const CASH_OUT = new Set(['withdrawal', 'fee_debit', 'invest', 'fund_subscription']);
+
+/**
+ * The cash account's statement, shaped like positionStatement: money in = inflows from Access plus maturities,
+ * redemptions and interest received; money out = investments, withdrawals and fee debits. Cash earns nothing, so
+ * income is only what the cash balance does not explain (zero when the records are complete).
+ */
+export function cashStatement(data, start, end) {
+  const nav = navSeries(data, end);
+  const cashOn = new Map(nav.map((r) => [r.date, r.cash]));
+  const flows = new Map();
+  for (const t of data.transactions ?? []) {
+    if (t.date < start || t.date > end) continue;
+    const key = CASH_IN.has(t.type) ? 'in' : CASH_OUT.has(t.type) ? 'out' : null;
+    if (!key) continue;
+    const f = flows.get(t.date) ?? flows.set(t.date, { in: ZERO, out: ZERO }).get(t.date);
+    f[key] = f[key].plus(t.amount);
+  }
+  let last = cashOn.get(addDays(start, -1)) ?? ZERO;
+  const total = { open: last, in: ZERO, out: ZERO, income: ZERO, close: ZERO };
+  const rows = [];
+  for (const date of eachDay(start, end)) {
+    const close = cashOn.get(date) ?? last;
+    const f = flows.get(date) ?? { in: ZERO, out: ZERO };
+    const income = close.minus(last).minus(f.in).plus(f.out);
+    if (!(last.isZero() && close.isZero() && f.in.isZero() && f.out.isZero())) {
+      rows.push({ date, open: last, in: f.in, out: f.out, income, close });
+      total.in = total.in.plus(f.in); total.out = total.out.plus(f.out); total.income = total.income.plus(income);
+    }
+    last = close;
+  }
+  total.close = last;
+  return { position: null, rows, total };
+}

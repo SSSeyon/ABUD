@@ -1,7 +1,7 @@
 // One holding's statement, day by day: opening balance, money in, money out, income and closing balance,
 // for its whole life to date or the shared period. Opens from Holdings (click a row) and the daily NAV make-up.
 import { addDays, dec, ZERO } from '../../engine/index.js';
-import { positionStatement } from '../daily.js';
+import { cashStatement, positionStatement } from '../daily.js';
 import { DEPOSIT_TYPES, positionsFor, TYPE_LABELS } from '../portfolio.js';
 import { resolvePeriod, sharedPeriod } from '../period.js';
 import { state } from '../store.js';
@@ -9,10 +9,11 @@ import { excelButton, fmtDate, fmtNaira, fmtPct, h, todayISO, xDate, xMoney } fr
 
 export function openHoldingStatement(positionId) {
   const data = state.data;
-  const pos = positionsFor(data).byId.get(positionId);
-  if (!pos) return;
   const today = todayISO();
   const inception = (data.transactions ?? []).reduce((m, t) => (!m || t.date < m ? t.date : m), today);
+  const isCash = positionId === 'cash';
+  const pos = isCash ? { label: 'Cash at bank', start: inception, end: null, inst: null } : positionsFor(data).byId.get(positionId);
+  if (!pos) return;
   const lifeEnd = pos.end ? addDays(pos.end, 0) : today;
   const range = { key: 'life' };
   const dialog = h('dialog', { class: 'modal wide', 'aria-label': pos.label });
@@ -28,7 +29,7 @@ export function openHoldingStatement(positionId) {
     }
     if (start > end) { body.replaceChildren(h('p', { class: 'muted' }, 'The holding was not held in the chosen period.')); return; }
     let st;
-    try { st = positionStatement(data, positionId, start, end); } catch (err) { body.replaceChildren(h('p', { class: 'bad' }, err.message)); return; }
+    try { st = isCash ? cashStatement(data, start, end) : positionStatement(data, positionId, start, end); } catch (err) { body.replaceChildren(h('p', { class: 'bad' }, err.message)); return; }
     const rows = st.rows;
     const t = st.total ?? { open: ZERO, in: ZERO, out: ZERO, income: ZERO, close: ZERO };
     const kpi = (label, value) => h('div', { class: 'stat' }, h('div', { class: 'stat-label' }, label), h('div', { class: 'stat-value' }, value));
@@ -38,7 +39,9 @@ export function openHoldingStatement(positionId) {
     body.replaceChildren(...[
       h('div', { class: 'stats' }, kpi('Opening balance', fmtNaira(t.open)), kpi('Inflows', fmtNaira(t.in)), kpi('Withdrawals', fmtNaira(t.out)),
         kpi('Income', fmtNaira(t.income)), kpi('Closing balance', fmtNaira(rows.at(-1)?.close ?? t.close))),
-      h('p', { class: 'muted small' }, `${fmtDate(start)} to ${fmtDate(end)} · ${rows.length} days. Inflows are money placed or subscribed (and balances moved onto a fund statement); withdrawals are maturities, redemptions and interest paid out. Income = closing − opening − inflows + withdrawals.`),
+      h('p', { class: 'muted small' }, isCash
+        ? `${fmtDate(start)} to ${fmtDate(end)} · ${rows.length} days. Inflows are money from Access plus maturities, redemptions and interest received; withdrawals are payments to Access, fee debits and money placed in investments. Cash earns nothing here, so income should be zero; anything else is a movement the entries do not explain.`
+        : `${fmtDate(start)} to ${fmtDate(end)} · ${rows.length} days. Inflows are money placed or subscribed (and balances moved onto a fund statement); withdrawals are maturities, redemptions and interest paid out. Income = closing − opening − inflows + withdrawals.`),
       rows.length > MAX ? h('p', { class: 'muted small' }, `Showing the last ${MAX} days; the Excel file has all of them.`) : null,
       h('div', { class: 'table-wrap stmt-table' }, h('table', null,
         h('thead', null, h('tr', null, ['Date', 'Opening', 'Inflows', 'Withdrawals', 'Income', 'Closing'].map((x, i) => h('th', { class: i ? 'num' : null }, x)))),
@@ -52,9 +55,9 @@ export function openHoldingStatement(positionId) {
     }]));
   };
 
-  const inst = pos.inst;
+  const inst = pos.inst ?? {};
   const fund = (data.funds ?? []).find((f) => f.id === inst.fundId);
-  const facts = [
+  const facts = isCash ? 'Uninvested balance in the portfolio account: money from Access and investment proceeds not yet placed.' : [
     TYPE_LABELS[inst.type] + (fund ? ` · ${fund.name}` : ''),
     inst.counterpartyName,
     inst.statement ? 'Valued at the platform statement balance' : null,
