@@ -130,15 +130,11 @@ input:focus, select:focus, textarea:focus { border-color: var(--brand); outline:
 }
 .brand { display: flex; flex-direction: column; gap: 6px; padding: 4px 10px 14px; text-decoration: none;
   background: linear-gradient(90deg, #e0344f 50%, var(--access-orange) 50%) left bottom / 100% 2px no-repeat; }
-.wordmark { display: flex; flex-direction: column; line-height: .9; }
-.wm-mbo { color: #e0344f; font-weight: 700; font-size: 34px; letter-spacing: -.04em; }
-.wm-capital { color: #a7a8ab; font-size: 15px; letter-spacing: .16em; margin-left: 2px; }
-.brand-row { display: flex; align-items: center; gap: 12px; }
-.brand-sep { width: 1px; align-self: stretch; background: #4a4b50; }
-.access-wm { display: flex; flex-direction: column; line-height: .9; }
-.aw-access { color: var(--access-orange); font-weight: 700; font-size: 27px; letter-spacing: -.03em; }
-.aw-holdings { color: #a7a8ab; font-size: 12px; letter-spacing: .14em; margin-left: 1px; }
-.access-logo { height: 34px; width: auto; }
+.brand-row { display: flex; align-items: center; gap: 12px; align-self: flex-start; background: #fff; padding: 8px 12px; }
+.brand-sep { width: 1px; align-self: stretch; background: #d5d6d9; }
+.logo { display: block; width: auto; }
+.logo-mbo { height: 42px; }
+.logo-access { height: 30px; }
 .brand-app { color: #fff; font-weight: 600; font-size: 13px; letter-spacing: .02em; margin-top: 4px; }
 .sidebar nav { display: flex; flex-direction: column; gap: 2px; }
 .sidebar nav a {
@@ -350,17 +346,16 @@ dialog.modal::backdrop { background: rgba(16, 17, 20, .45); }
 .document section { margin-bottom: 22px; }
 .document h2 { font-size: 15px; border-bottom: 2px solid var(--brand); padding-bottom: 4px; }
 .doc-head { display: flex; gap: 24px; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 16px; margin-bottom: 20px; }
-.doc-head .wordmark { flex-direction: column; }
-.doc-head .wm-mbo { color: var(--brand); }
+.doc-firm, .doc-client { background: #fff; padding: 6px 8px; }
+.doc-head .logo-mbo { height: 54px; }
+.doc-head .logo-access { height: 36px; }
 .doc-head h1 { margin: 0 0 4px; font-size: 22px; }
 .doc-head p { margin: 0; color: var(--muted); }
 .doc-client { margin-left: auto; padding-left: 16px; border-left: 2px solid var(--access-orange); }
-.doc-head .aw-holdings { color: var(--muted); }
 .doc-ref { font-size: 12px; color: var(--muted); border-top: 1px solid var(--border); padding-top: 10px; margin-top: 24px; }
 .document.draft::before { content: 'DRAFT'; position: absolute; top: 30%; left: 50%; transform: translate(-50%, -50%) rotate(-20deg); font-size: 120px; font-weight: 800; color: var(--brand); opacity: .07; pointer-events: none; }
 @media print {
   .document { border: 0; padding: 0; max-width: none; }
-  .doc-head .wm-capital { color: #6b6c70; }
 }
 @media (max-width: 640px) {
   .document { padding: 18px 16px; }
@@ -455,16 +450,11 @@ dialog.modal::backdrop { background: rgba(16, 17, 20, .45); }
   .top-actions { margin-left: 0; gap: 4px; }
   .topbar .icon-btn { background: transparent; border-color: transparent; color: #fff; width: 36px; height: 36px; }
   .notif-panel { position: fixed; left: 12px; right: 12px; width: auto; top: calc(56px + env(safe-area-inset-top)); }
-  .brand-top .wordmark { flex-direction: row; align-items: baseline; gap: 3px; }
-  .brand-top .wm-mbo { font-size: 24px; }
-  .brand-top .wm-capital { font-size: 11px; letter-spacing: .12em; }
   .brand-top { flex-direction: column; align-items: flex-start; gap: 3px; background: none; }
-  .brand-top .access-wm { flex-direction: row; align-items: baseline; gap: 3px; }
-  .brand-top .aw-access { font-size: 19px; }
-  .brand-top .aw-holdings { font-size: 10px; letter-spacing: .1em; }
-  .brand-top .access-logo { height: 22px; }
+  .brand-top .logo-mbo { height: 32px; }
+  .brand-top .logo-access { height: 26px; }
   .brand-top .brand-app { display: block; font-size: 11px; font-weight: 500; color: var(--sidebar-fg); margin-top: 0; }
-  .brand-top .brand-row { gap: 9px; }
+  .brand-top .brand-row { gap: 9px; padding: 4px 8px; }
   .topbar-title { display: none; }
   .top-actions { margin-left: auto; }
   .bottom-bar {
@@ -583,17 +573,17 @@ tr.clickable:focus-visible { outline: 2px solid var(--brand); outline-offset: -2
 :root { --cut: 12px; --cut-sm: 7px; --cut-xs: 4px; }
 .card, .stat, .table-wrap, .document, .close-status, dialog.modal, .home-card, .notif-panel, .form-preview, .toast, .chart-tip { --c: var(--cut); }
 button, input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea, .button-link, .sidebar nav a,
-.icon-btn, .seg, .seg button, .hc-icon, .bb-tab, .ladder-row, .home-summary span, .chip { --c: var(--cut-sm); }
+.icon-btn, .seg, .seg button, .hc-icon, .bb-tab, .ladder-row, .home-summary span, .chip, .brand-row, .doc-firm, .doc-client { --c: var(--cut-sm); }
 .badge, .alert-level, .chip-count, .nav-count, .bell-count, .hc-count { --c: var(--cut-xs); }
 .card, .stat, .table-wrap, .document, .close-status, dialog.modal, .home-card, .notif-panel, .form-preview, .toast, .chart-tip,
 button, input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea, .button-link, .sidebar nav a,
-.icon-btn, .seg, .seg button, .hc-icon, .bb-tab, .ladder-row, .home-summary span, .chip,
+.icon-btn, .seg, .seg button, .hc-icon, .bb-tab, .ladder-row, .home-summary span, .chip, .brand-row, .doc-firm, .doc-client,
 .badge, .alert-level, .chip-count, .nav-count, .bell-count, .hc-count { border-radius: var(--c) 0; corner-shape: bevel; }
 .swatch, .alloc-bar, .ladder-bar, .hbar { border-radius: 0; }
 @supports not (corner-shape: bevel) {
   .card, .stat, .table-wrap, .document, .close-status, .home-card, .form-preview, .toast, .chart-tip,
   button, input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea, .button-link, .sidebar nav a,
-  .icon-btn, .seg, .seg button, .hc-icon, .bb-tab, .ladder-row, .home-summary span, .chip,
+  .icon-btn, .seg, .seg button, .hc-icon, .bb-tab, .ladder-row, .home-summary span, .chip, .brand-row, .doc-firm, .doc-client,
   .badge, .alert-level, .chip-count, .nav-count, .bell-count, .hc-count {
     border-radius: 0;
     clip-path: polygon(var(--c) 0, 100% 0, 100% calc(100% - var(--c)), calc(100% - var(--c)) 100%, 0 100%, 0 var(--c));

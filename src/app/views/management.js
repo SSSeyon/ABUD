@@ -10,7 +10,7 @@ import { breachesBetween } from '../mgmt.js';
 import { periodPicker, resolvePeriod } from '../period.js';
 import { navSeries, periodReport } from '../portfolio.js';
 import { loadedAll, state } from '../store.js';
-import { excelButton, fmtDate, fmtNaira, fmtPct, h, table, todayISO, xDate, xMoney, xPct } from '../ui.js';
+import { excelButton, fmtDate, fmtNaira, fmtPct, h, mboMark, table, todayISO, xDate, xMoney, xPct } from '../ui.js';
 
 const NEEDS = ['transactions', 'instruments', 'fundPrices', 'mandateTerms', 'funds', 'auctions'];
 const sel = { key: 'ytd', start: '', end: '' };
@@ -38,7 +38,7 @@ export function managementView(rerender) {
   const toolbar = h('div', { class: 'toolbar no-print' }, periodPicker(sel, inception, today, rerender),
     h('button', { class: 'primary', onclick: () => window.print() }, 'Print / save as PDF'));
   const docHead = h('div', { class: 'doc-head' },
-    h('div', { class: 'wordmark' }, h('span', { class: 'wm-mbo' }, 'mbo'), h('span', { class: 'wm-capital' }, 'capital')),
+    h('div', { class: 'doc-firm' }, mboMark()),
     h('div', null, h('h1', null, 'Management report (internal)'), h('p', null, `ABUD portfolio · ${fmtDate(period.start)} to ${fmtDate(period.end)} · prepared ${fmtDate(today)}`)));
 
   let m;

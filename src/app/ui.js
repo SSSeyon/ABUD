@@ -344,13 +344,12 @@ export function excelButton(label, filename, build) {
   } }, label);
 }
 
-/**
- * Access Holdings mark. Typeset in Access colours until the official logo file is added: put it in assets/ and set
- * ACCESS_LOGO to its path (an SVG or PNG on a transparent background).
- */
-export const ACCESS_LOGO = '';
+/** Company logos (PNG on a transparent background, in assets/). The plate behind them keeps them legible on dark surfaces. */
+export const MBO_LOGO = 'assets/mbo-capital.png';
+export const ACCESS_LOGO = 'assets/access-holdings.png';
+export function mboMark() {
+  return h('img', { class: 'logo logo-mbo', src: MBO_LOGO, alt: 'MBO Capital' });
+}
 export function accessMark() {
-  return ACCESS_LOGO
-    ? h('img', { class: 'access-logo', src: ACCESS_LOGO, alt: 'Access Holdings' })
-    : h('span', { class: 'access-wm', role: 'img', 'aria-label': 'Access Holdings' }, h('span', { class: 'aw-access' }, 'access'), h('span', { class: 'aw-holdings' }, 'holdings'));
+  return h('img', { class: 'logo logo-access', src: ACCESS_LOGO, alt: 'Access Holdings' });
 }

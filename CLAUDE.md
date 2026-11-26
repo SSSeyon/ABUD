@@ -113,9 +113,8 @@ no withdrawal-instruction verification or signatory register. Do not add them ba
   (before/after of each touched doc); #/history lists them with Undo. The audit write is separate so a
   rules problem never blocks the save itself.
 - Look: MBO Capital crimson (#c4122f) and slate grey, with Access Holdings orange and blue (`--access-orange`,
-  `--access-navy`, approximate until their brand guide is confirmed) for the client: the brand pairs the mbo capital
-  wordmark with the Access mark (`accessMark` in ui.js: typeset until `ACCESS_LOGO` points at the official file in
-  assets/), "ABUD Portfolio" under them on desktop and phone, a two-tone crimson/orange rule, inflows from Access in
+  `--access-navy`, approximate until their brand guide is confirmed) for the client: the brand pairs the two official logos
+  (`assets/mbo-capital.png`, `assets/access-holdings.png`; `mboMark`/`accessMark` in ui.js) on a white chamfered plate, "ABUD Portfolio" under them on desktop and phone, a two-tone crimson/orange rule, inflows from Access in
   Access blue, and the Access mark on the client documents. Corners are chamfered (style D: top-left and bottom-right
   cut; `corner-shape: bevel` with a clip-path fallback, block at the end of styles.css): use `--c`, never round
   corners. Charts are inline SVG in `src/app/charts.js`.
