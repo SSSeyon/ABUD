@@ -59,7 +59,7 @@ export function holdingsView(rerender) {
         onclick: (e) => { if (!e.target.closest('button, a, select, input')) openHoldingStatement(i.id); },
         onkeydown: (e) => { if (e.key === 'Enter' && e.target === e.currentTarget) openHoldingStatement(i.id); } },
       h('td', null, TYPE_LABELS[i.type], i.type === 'money_market_fund' ? h('div', { class: 'muted' }, funds.get(i.fundId)?.name ?? '') : null, dtm != null && dtm < 0 ? h('div', { class: 'badge warn' }, 'Matured: record it') : null),
-      h('td', null, i.counterpartyName ?? ''),
+      h('td', null, cpOf(i) ?? ''),
       h('td', { class: 'num' }, fmtNaira(i.cost)),
       h('td', { class: 'num' }, i.faceValue ? fmtNaira(i.faceValue) : fmtNaira(expectedMaturityValue(i))),
       h('td', null, rate),
@@ -78,14 +78,20 @@ export function holdingsView(rerender) {
     if (c.key === 'call_deposit' || c.key === 'cash') continue;
     const group = live.filter((i) => i.type === c.key);
     const accts = c.key === 'money_market_fund' ? accounts : [];
-    if (!group.length && !accts.length) continue;
+    // Every fund in the register gets a row even with nothing in it, so it can be topped up from here.
+    const idle = c.key === 'money_market_fund' && (!filt.type || filt.type === c.key) && !filt.counterparty && !filt.custodian && !horizon
+      ? [...funds.values()].filter((f) => !group.some((i) => i.fundId === f.id) && !accts.some((p) => p.fundId === f.id)
+        && (!q || [f.name, f.managerName, 'money market fund'].some((s) => String(s ?? '').toLowerCase().includes(q))))
+      : [];
+    if (!group.length && !accts.length && !idle.length) continue;
     const values = group.map(valueOf);
     const acctValues = accts.map((p) => p.value(today));
     const sub = [...values, ...acctValues].reduce((t, v) => (typeof v === 'string' ? t : t.plus(v)), dec(0));
     total = total.plus(sub);
-    rows.push(h('tr', { class: 'group' }, h('td', { colspan: 8 }, classTag(c.key, c.label), h('span', { class: 'muted' }, ` · ${group.length + accts.length}`)), h('td', { class: 'num' }, fmtNaira(sub)), h('td', null)));
+    rows.push(h('tr', { class: 'group' }, h('td', { colspan: 8 }, classTag(c.key, c.label), h('span', { class: 'muted' }, ` · ${group.length + accts.length + idle.length}`)), h('td', { class: 'num' }, fmtNaira(sub)), h('td', null)));
     accts.forEach((p, n) => rows.push(accountRow(p, acctValues[n], statements, today)));
     group.forEach((i, n) => rows.push(row(i, values[n])));
+    idle.forEach((f) => rows.push(idleFundRow(f, data)));
   }
   // Cash and call deposits, last: the uninvested balance (from the NAV series) and any open calls.
   const calls = live.filter((i) => i.type === 'call_deposit');
@@ -110,7 +116,7 @@ export function holdingsView(rerender) {
   const toolbar = h('div', { class: 'toolbar no-print' },
     h('label', { class: 'period-picker' }, h('span', { class: 'period-label' }, 'Search'),
       h('input', { type: 'search', value: filt.q, placeholder: 'Counterparty, custodian, fund', onchange: (e) => { filt.q = e.target.value; rerender(); } })),
-    sel('Class', 'type', ASSET_CLASSES.filter((c) => c.key === 'call_deposit' || allLive.some((i) => i.type === c.key)).map((c) => [c.key, c.key === 'call_deposit' ? 'Cash and call deposits' : c.label])),
+    sel('Class', 'type', ASSET_CLASSES.filter((c) => c.key === 'call_deposit' || (c.key === 'money_market_fund' && funds.size) || allLive.some((i) => i.type === c.key)).map((c) => [c.key, c.key === 'call_deposit' ? 'Cash and call deposits' : c.label])),
     sel('Counterparty', 'counterparty', uniq(allLive.map(cpOf))),
     sel('Custodian', 'custodian', uniq(allLive.map((i) => i.custodianName?.trim() || 'Not recorded'))),
     sel('Maturing within', 'within', [['7', '7 days'], ['30', '30 days'], ['90', '90 days'], ['182', '6 months']]),
@@ -140,6 +146,21 @@ export function holdingsView(rerender) {
         'No holdings.'),
       h('p', { class: 'muted small' }, 'Custodians come from each deal. Keep the names consistent with the register on the Counterparties screen.')),
   );
+}
+
+/** A fund with nothing in it today: when it was last redeemed, and buttons to subscribe or upload a statement. */
+function idleFundRow(f, data) {
+  const ids = new Set((data.instruments ?? []).filter((i) => i.type === 'money_market_fund' && i.fundId === f.id).map((i) => i.id));
+  const last = (data.transactions ?? []).filter((t) => t.type === 'fund_redemption' && ids.has(t.instrumentId)).reduce((m, t) => (!m || t.date > m.date ? t : m), null);
+  const note = last ? `Nothing invested: redeemed ${fmtNaira(last.amount)} on ${fmtDate(last.date)}` : 'Nothing invested yet';
+  return h('tr', null,
+    h('td', null, TYPE_LABELS.money_market_fund, h('div', { class: 'muted' }, f.name), h('div', { class: 'badge' }, note)),
+    h('td', null, f.managerName ?? ''),
+    h('td', { class: 'num' }, '—'), h('td', { class: 'num' }, '—'), h('td', null, '—'), h('td', null, ''), h('td', null, 'Open'), h('td', { class: 'num' }, ''),
+    h('td', { class: 'num' }, fmtNaira(0)),
+    h('td', null, h('div', { class: 'row-actions' },
+      h('button', { class: 'primary', onclick: () => dealForm(state.data, null, null, { type: 'money_market_fund', fundId: f.id, counterpartyName: f.managerName }) }, 'Subscribe'),
+      h('button', { onclick: () => openFundUpload(f.id) }, 'Upload statement'))));
 }
 
 /** The uninvested cash balance: one row; click for its daily statement. */
@@ -314,7 +335,7 @@ function rolloverForm(i, openingTx) {
 const pct = (fraction) => (fraction ? dec(fraction).times(100).toFixed() : '');
 
 /** New deal, or edit an existing one (inst + its opening transaction). */
-function dealForm(data, inst, openingTx) {
+function dealForm(data, inst, openingTx, preset) {
   const funds = data.funds ?? [];
   const today = todayISO();
   const isDiscount = (v) => DISCOUNT.includes(v.type);
@@ -323,9 +344,9 @@ function dealForm(data, inst, openingTx) {
     intro: inst ? 'Changing cost or value date also updates the investment entry.' : 'Records the instrument and the investment entry that pays for it.',
     submitLabel: 'Save deal',
     fields: [
-      { name: 'type', label: 'Instrument type', type: 'select', required: true, value: inst?.type ?? 'ntb', options: Object.entries(TYPE_LABELS).map(([value, label]) => ({ value, label })) },
-      { name: 'fundId', label: 'Fund', type: 'select', required: true, value: inst?.fundId ?? '', placeholder: funds.length ? 'Choose a fund' : 'No funds yet: add them under Settings → Funds', options: funds.map((f) => ({ value: f.id, label: f.name })), showIf: (v) => v.type === 'money_market_fund' },
-      { name: 'counterpartyName', label: 'Counterparty (bank, issuer or fund manager)', type: 'text', required: true, value: inst?.counterpartyName ?? '' },
+      { name: 'type', label: 'Instrument type', type: 'select', required: true, value: inst?.type ?? preset?.type ?? 'ntb', options: Object.entries(TYPE_LABELS).map(([value, label]) => ({ value, label })) },
+      { name: 'fundId', label: 'Fund', type: 'select', required: true, value: inst?.fundId ?? preset?.fundId ?? '', placeholder: funds.length ? 'Choose a fund' : 'No funds yet: add them under Settings → Funds', options: funds.map((f) => ({ value: f.id, label: f.name })), showIf: (v) => v.type === 'money_market_fund' },
+      { name: 'counterpartyName', label: 'Counterparty (bank, issuer or fund manager)', type: 'text', required: true, value: inst?.counterpartyName ?? preset?.counterpartyName ?? '' },
       { name: 'custodianName', label: 'Custodian', type: 'text', value: inst?.custodianName ?? '' },
       { name: 'tradeDate', label: 'Trade date', type: 'date', required: true, value: inst?.tradeDate ?? today },
       { name: 'valueDate', label: 'Value (settlement) date', type: 'date', required: true, value: inst?.valueDate ?? today },

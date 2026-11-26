@@ -51,7 +51,8 @@ no withdrawal-instruction verification or signatory register. Do not add them ba
   out, income, close; income = close − open − in + out, so incomes + external flows = the NAV change) and
   `positionStatement`, plus `cashStatement` for the uninvested balance. Holdings ends with a "Cash and call deposits"
   group (cash at bank from `navSeries`, and open call deposits), so its total is NAV; the cash row opens the cash
-  statement (`openHoldingStatement('cash')`). #/navdaily (`views/navdaily.js`) shows it by investment or class, as income or value; clicking a
+  statement (`openHoldingStatement('cash')`). Every fund in `funds` always has a Holdings row: with nothing in it, an
+  idle row (last redemption, Subscribe pre-filled, Upload statement). #/navdaily (`views/navdaily.js`) shows it by investment or class, as income or value; clicking a
   holding (Holdings rows, Daily NAV) opens its daily statement (`views/holdingdetail.js`).
 - Fund statements: Holdings → Upload fund statement (`views/fundupload.js`, `fundstatement.js`: `parseStatement` finds the
   Date / Investment / Liquidation / Withdrawal / Rate / Earnings / Balance columns, `statementPlan` matches movements to
