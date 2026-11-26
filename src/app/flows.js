@@ -4,7 +4,7 @@
 import { ZERO } from '../engine/index.js';
 
 const SHORT = { ntb: 'Bills', commercial_paper: 'CP', fixed_deposit: 'Fixed dep.', call_deposit: 'Calls', money_market_fund: 'Funds', omo: 'OMO', cash: 'Cash' };
-const NEUTRAL = { opening: 'var(--slate)', inflows: 'var(--brand)', withdrawals: '#8b8c90', fees: '#b5b6ba', losses: 'var(--down)' };
+const NEUTRAL = { opening: 'var(--slate)', inflows: 'var(--access-navy)', withdrawals: '#8b8c90', fees: '#b5b6ba', losses: 'var(--down)' };
 
 /** @param {ReturnType<import('./portfolio.js').periodReport>} r */
 export function periodFlows(r) {

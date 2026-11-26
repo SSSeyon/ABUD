@@ -9,7 +9,10 @@
     cbn_omo  OMO auctions             https://www.cbn.gov.ng/api/GetAllSecuritiesOMO
     cbn_mpc  MPR and latest communique https://www.cbn.gov.ng/api/GetMPR_TOP, GetMpcTOP
     cbn_cpi  Headline inflation        https://www.cbn.gov.ng/api/GetInflationRatesTOP
-    fmdq_cp  CP quotation notices      https://fmdqgroup.com/wp-json/wp/v2/posts
+    fmdq_cp  Commercial paper         FMDQ posts (quotations and programme registrations), plus Nairametrics and
+                                      BusinessDay articles with commercial paper in the headline (WordPress REST search,
+                                      all pages back $CpDays days). Each becomes an unconfirmed cpQuotes entry.
+                                      (Proshare has no feed or API and its robots.txt disallows automated readers.)
     news     Money-market news         Nairametrics and BusinessDay RSS (filtered), CBN circulars (GetAllCirculars)
 
   Only adds documents that don't exist yet, so manual entries and edits made in the app are never overwritten.
@@ -18,7 +21,7 @@
 #>
 param(
   [string]$Since = '2021-01-01',     # oldest auction to keep
-  [int]$CpDays = 120,                # how far back to pick up CP notices
+  [int]$CpDays = 730,                # how far back to pick up CP notices and articles
   [int]$NewsDays = 30,               # how far back to pick up news and CBN circulars
   [switch]$DryRun
 )
@@ -164,21 +167,121 @@ function Get-Issuer([string]$Title) {
   if ($t -match '^(.+?) Series ') { return $Matches[1].Trim() }
   ''
 }
-function Sync-Cp {
-  $existing = Get-ExistingIds 'cpQuotes'
-  $after = (Get-Date).AddDays(-$CpDays).ToString('yyyy-MM-dd')
-  $posts = Get-Json "https://fmdqgroup.com/wp-json/wp/v2/posts?search=commercial%20paper&per_page=50&after=${after}T00:00:00&_fields=id,date,title,link"
-  $list = New-Object System.Collections.Generic.List[object]
-  foreach ($p in @($posts)) {
-    $title = [System.Net.WebUtility]::HtmlDecode([string]$p.title.rendered)
-    if ($title -notmatch '(?i)commercial paper|\bCPs?\b|CPs-Q') { continue }
-    $id = "fmdq-$($p.id)"
-    if ($existing.Contains($id)) { continue }
-    $size = ''
-    if ($title -match ([regex]::Escape($Naira) + '\s?([\d.,]+)\s?Billion')) { $size = ([decimal]::Parse(($Matches[1] -replace ',', ''), $Inv) * 1000000000).ToString('0.00', $Inv) }
-    $list.Add(@{ id = $id; data = [ordered]@{ date = ([string]$p.date).Substring(0, 10); title = $title; issuer = (Get-Issuer $title); size = $size; sourceUrl = [string]$p.link; confirmed = $false; source = 'FMDQ' } })
+# Issuer from a news headline: "Veritasi offers 23% on N15 billion ...", "Dangote Cement's N100bn CP ...".
+function Get-NewsIssuer([string]$Title) {
+  $t = $Title -replace [char]0x2019, "'"
+  # A short label before a colon ("Beyond traditional loans: ..."), with no figures in it, is not the issuer.
+  if ($t -match '^([^:\d]{1,40}): ' -and ($Matches[1] -split ' ').Count -le 4 -and $Matches[1] -notmatch "(?i)'s|\b(offers|raises|launches)\b") { $t = $t.Substring($Matches[0].Length) }
+  $verbs = 'offers|issues|raises|opens|launches|taps|lists|quotes|registers|secures|seeks|announces|plans|unveils|completes|closes|redeems|repays|pays off|prices|returns|floats|begins|gets|receives|commences|eyes|targets|records|executes|makes|delivers|strengthens|expands|pivots|approves|to issue|to raise'
+  $i = ''
+  if ($t -match "(?i)approves (?:the )?(?:quotation of )?(.+?)(?:'s)? (?:N|NGN|$([regex]::Escape($Naira)))\s?\d") { $i = $Matches[1] }
+  elseif ($t -match "^(.+?)'s ") { $i = $Matches[1] }
+  elseif ($t -match "^(.+?s)' ") { $i = $Matches[1] }
+  elseif ($t -match "(?i)^(.+?) (?:successfully |quietly )?(?:$verbs)\b") { $i = $Matches[1] }
+  else { $i = Get-Issuer $t }
+  # Too long or a phrase rather than a name ("Why commercial papers are ...", "Investors snap up X"): leave blank.
+  if ($i -match '(?i)^(why|how|what|investors?|firm|real estate firm|largest|nigeria|ngx|fmdq|sec)\b' -or ($i -split ' ').Count -gt 5) { return '' }
+  $i.Trim()
+}
+# A short key for matching the same issuer across sources ("Dangote Cement Plc" and "Dangote Cement" agree).
+function Get-IssuerKey([string]$Issuer) {
+  $w = ($Issuer.ToLowerInvariant() -replace "[^a-z0-9 ]", ' ' -split '\s+') | Where-Object { $_ -and $_ -notin @('limited', 'ltd', 'plc', 'nigeria', 'the', 'group', 'company', 'holdings', 'and') }
+  (@($w) | Select-Object -First 2) -join ' '
+}
+# Naira size, yield and tenor when the headline states them.
+function Get-CpTerms([string]$Title) {
+  $out = @{ size = ''; yield = ''; tenorDays = '' }
+  if ($Title -match ('(?i)(?:' + [regex]::Escape($Naira) + '|\bN|NGN)\s?([\d.,]+)\s?(billion|bn|million|m)\b')) {
+    $num = $Matches[1]; $mult = if ($Matches[2].ToLowerInvariant().StartsWith('b')) { 1000000000 } else { 1000000 }
+    try { $out.size = ([decimal]::Parse(($num -replace ',', '').TrimEnd('.'), $Inv) * $mult).ToString('0.00', $Inv) } catch { }
   }
-  if ($DryRun) { foreach ($d in $list) { Write-Host ("  {0}  {1}  |  {2}" -f $d.data.date, $d.data.issuer, $d.data.size) } }
+  # Only a rate the headline gives as the CP's return ("offers 23%", "at 21.5%", "23% return"), between 5% and 40%.
+  if ($Title -match '(?i)(?:offers?(?: up to)?|at|yields?(?: of)?|returns? of|coupon of|rate of)\s+(\d{1,2}(?:\.\d+)?)\s?(?:%|per ?cent)' -or
+      $Title -match '(?i)(\d{1,2}(?:\.\d+)?)\s?(?:%|per ?cent)\s+(?:yield|return|rate|coupon|p\.a)') {
+    $y = [decimal]::Parse($Matches[1], $Inv)
+    if ($y -ge 5 -and $y -le 40) { $out.yield = ($y / 100).ToString('0.######', $Inv) }
+  }
+  if ($Title -match '(?i)\b(\d{2,3})[- ]days?\b') { $out.tenorDays = $Matches[1] }
+  $out
+}
+# Every post from a WordPress site matching a search, newest first, back to $After (all pages).
+function Get-WpPosts([string]$Site, [string]$Search, [string]$After) {
+  $all = New-Object System.Collections.Generic.List[object]
+  for ($page = 1; $page -le 40; $page++) {
+    $url = "$Site/wp-json/wp/v2/posts?search=$([uri]::EscapeDataString($Search))&per_page=100&page=$page&after=${After}T00:00:00&orderby=date&_fields=id,date,title,link"
+    try { $r = Get-Json $url } catch { if ($page -gt 1 -and "$($_.Exception.Message)" -match '400') { break }; throw }
+    # Assign first, then foreach: PS 5.1 hands back a JSON array unenumerated.
+    $n = 0
+    foreach ($p in $r) { if ($p) { $all.Add($p); $n++ } }
+    if ($n -lt 100) { break }
+  }
+  , $all
+}
+function Get-ExistingCp {
+  $docs = New-Object System.Collections.Generic.List[object]
+  $token = ''
+  do {
+    $url = "$Base/cpQuotes?pageSize=300&mask.fieldPaths=date&mask.fieldPaths=issuer&mask.fieldPaths=kind&key=$ApiKey"
+    if ($token) { $url += "&pageToken=$token" }
+    try { $r = Invoke-RestMethod -Uri $url -TimeoutSec 60 } catch { if ($DryRun) { return , $docs }; throw }
+    foreach ($d in @($r.documents)) { if ($d) { $docs.Add(@{ id = ($d.name -split '/')[-1]; date = [string]$d.fields.date.stringValue; key = (Get-IssuerKey ([string]$d.fields.issuer.stringValue)); group = $(if ([string]$d.fields.kind.stringValue -eq 'redemption') { 'redemption' } else { 'offer' }) }) } }
+    $token = $r.nextPageToken
+  } while ($token)
+  , $docs
+}
+function Sync-Cp {
+  $known = Get-ExistingCp
+  $ids = New-Object 'System.Collections.Generic.HashSet[string]'
+  foreach ($k in $known) { [void]$ids.Add($k.id) }
+  $after = (Get-Date).AddDays(-$CpDays).ToString('yyyy-MM-dd')
+  $list = New-Object System.Collections.Generic.List[object]
+  # Same issuer within 30 days of an entry already held (or added this run): the same paper, so skip the article.
+  # Keys agree when equal or one starts the other ("pivot" and "pivot integrated"); a redemption is never
+  # the same story as an issue.
+  $isDuplicate = {
+    param($key, $date, $group)
+    if (-not $key) { return $false }
+    $d = [datetime]::ParseExact($date, 'yyyy-MM-dd', $Inv)
+    foreach ($k in $known) {
+      if (-not $k.key -or -not $k.date -or $k.group -ne $group) { continue }
+      $same = $k.key -eq $key -or $k.key.StartsWith("$key ") -or $key.StartsWith("$($k.key) ")
+      if ($same -and [Math]::Abs(([datetime]::ParseExact($k.date, 'yyyy-MM-dd', $Inv) - $d).TotalDays) -le 30) { return $true }
+    }
+    $false
+  }
+  $sources = @(
+    @{ site = 'https://fmdqgroup.com'; prefix = 'fmdq'; source = 'FMDQ'; searches = @('commercial paper', 'CP programme') },
+    @{ site = 'https://nairametrics.com'; prefix = 'nm'; source = 'Nairametrics'; searches = @('commercial paper') },
+    @{ site = 'https://businessday.ng'; prefix = 'bd'; source = 'BusinessDay'; searches = @('commercial paper') }
+  )
+  $errors = @()
+  foreach ($s in $sources) {
+    try {
+      foreach ($q in $s.searches) {
+        foreach ($p in (Get-WpPosts $s.site $q $after)) {
+          $title = [Net.WebUtility]::HtmlDecode([string]$p.title.rendered).Trim()
+          if ($title -notmatch '(?i)commercial papers?|\bCPs?\b|CPs-Q') { continue }
+          $id = "$($s.prefix)-$($p.id)"
+          if ($ids.Contains($id)) { continue }
+          $date = ([string]$p.date).Substring(0, 10)
+          $issuer = if ($s.prefix -eq 'fmdq') { Get-Issuer $title } else { Get-NewsIssuer $title }
+          $key = Get-IssuerKey $issuer
+          $terms = Get-CpTerms $title
+          # An article that names neither an amount nor a rate is commentary, not a paper to consider.
+          if ($s.prefix -ne 'fmdq' -and -not $terms.size -and -not $terms.yield) { continue }
+          $kind = if ($title -match '(?i)redeem|redemption|repay|pays? off|maturity|returns N|returns \S*bn to') { 'redemption' } elseif ($title -match '(?i)programme|program\b|registers|registration') { 'programme' } elseif ($s.prefix -eq 'fmdq') { 'quotation' } else { 'issue' }
+          $group = if ($kind -eq 'redemption') { 'redemption' } else { 'offer' }
+          if ($s.prefix -ne 'fmdq' -and (& $isDuplicate $key $date $group)) { continue }
+          [void]$ids.Add($id)
+          $list.Add(@{ id = $id; key = $key; data = [ordered]@{ date = $date; title = $title; issuer = $issuer; size = $terms.size; yield = $terms.yield; tenorDays = $terms.tenorDays; kind = $kind; sourceUrl = [string]$p.link; confirmed = $false; source = $s.source } })
+          $known.Add(@{ id = $id; date = $date; key = $key; group = $group })
+        }
+      }
+    } catch { $errors += "$($s.source): $($_.Exception.Message)" }
+  }
+  foreach ($e in $errors) { Write-Warning "CP source skipped: $e" }
+  if ($errors.Count -eq $sources.Count) { throw ($errors -join '; ') }
+  if ($DryRun) { foreach ($d in ($list | Sort-Object { $_.data.date } -Descending)) { Write-Host ("  {0}  {1,-12} {2,-9} {3,-28} {4,16} {5,6} {6,4}  {7}" -f $d.data.date, $d.data.source, $d.data.kind, $d.data.issuer, $d.data.size, $d.data.yield, $d.data.tenorDays, $d.data.title) } }
   Add-Docs 'cpQuotes' $list
   @{ added = $list.Count }
 }

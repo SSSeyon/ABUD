@@ -82,7 +82,11 @@ no withdrawal-instruction verification or signatory register. Do not add them ba
 - Market: `src/app/market.js` (latest auctions, MPC, events, `rankOpportunities` with the tenor, concentration and
   liquidity rules; FGN paper exempt from concentration). Data comes from `tools/feeds/fetch-feeds.ps1`, run by
   `.github/workflows/market-feeds.yml` (weekdays, no secrets; CBN JSON APIs have no CORS so the browser can't call them)
-  and only ever adds missing docs. Every feed also has a manual form on #/market.
+  and only ever adds missing docs. Every feed also has a manual form on #/market. Commercial paper (`fmdq_cp`): every
+  FMDQ CP post (quotations and programme registrations) plus Nairametrics and BusinessDay articles with commercial paper
+  in the headline, via WordPress REST search, two years back; size, yield and tenor read from the headline; `kind`
+  (quotation, programme, issue, redemption); a news story within 30 days of the same issuer is skipped. Proshare has no
+  feed or API and its robots.txt disallows automated readers. #/market filters them by kind, status and source.
   News (`news`) and an auction calendar (`upcomingAuctions`: entered `auctionCalendar` dates, else projected from the
   recent cycle) are on #/market too; reinvestment options below the minimum rating are rejected.
 - Back-test (#/backtest): `src/app/backtest.js` `runBacktest` reruns `computeClose` for every completed quarter (one NAV
@@ -108,7 +112,13 @@ no withdrawal-instruction verification or signatory register. Do not add them ba
 - Change history: every write in actions.js goes through `commit`, which also appends an `audit` doc
   (before/after of each touched doc); #/history lists them with Undo. The audit write is separate so a
   rules problem never blocks the save itself.
-- Look: MBO Capital crimson (#c4122f) and slate grey; charts are inline SVG in `src/app/charts.js`.
+- Look: MBO Capital crimson (#c4122f) and slate grey, with Access Holdings orange and blue (`--access-orange`,
+  `--access-navy`, approximate until their brand guide is confirmed) for the client: the brand pairs the mbo capital
+  wordmark with the Access mark (`accessMark` in ui.js: typeset until `ACCESS_LOGO` points at the official file in
+  assets/), "ABUD Portfolio" under them on desktop and phone, a two-tone crimson/orange rule, inflows from Access in
+  Access blue, and the Access mark on the client documents. Corners are chamfered (style D: top-left and bottom-right
+  cut; `corner-shape: bevel` with a clip-path fallback, block at the end of styles.css): use `--c`, never round
+  corners. Charts are inline SVG in `src/app/charts.js`.
 - `src/engine/` pure calculation engine, no I/O.
 - History import: `data/history-2026-09-30.json` (inception to 30 Sep 2026) is built by
   `tools/history/build-history.ps1` from `tools/history/source.txt` plus the workbook's bank ledger, fee table and

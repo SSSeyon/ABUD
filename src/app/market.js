@@ -170,8 +170,8 @@ export function marketEvents(data, today) {
       detail: l.tenor === 91 ? `The 91-day rate sets next quarter's hurdle: ${up ? 'a higher' : 'a lower'} hurdle if it holds to quarter end.` : `${up ? 'Better' : 'Lower'} yields for new bills at this tenor.` });
   }
   for (const q of data.cpQuotes ?? []) {
-    if (daysBetween(q.date, today) > recentDays) continue;
-    out.push({ key: `cp-${q.id}`, date: q.date, title: `New CP quotation: ${q.issuer || q.title}`, detail: q.confirmed ? `Confirmed: ${q.yield ? `${dec(q.yield).times(100).toFixed(2)}%` : 'yield not set'}${q.tenorDays ? `, ${q.tenorDays} days` : ''}.` : 'Needs yield, tenor and rating before it counts as an option (Market screen).' });
+    if (q.kind === 'redemption' || daysBetween(q.date, today) > recentDays) continue;
+    out.push({ key: `cp-${q.id}`, date: q.date, title: `New CP ${q.kind === 'programme' ? 'programme' : q.kind === 'issue' ? 'issue' : 'quotation'}: ${q.issuer || q.title}`, detail: q.confirmed ? `Confirmed: ${q.yield ? `${dec(q.yield).times(100).toFixed(2)}%` : 'yield not set'}${q.tenorDays ? `, ${q.tenorDays} days` : ''}.` : 'Needs yield, tenor and rating before it counts as an option (Market screen).' });
   }
   const mpc = mpcHistory(data)[0];
   if (mpc && mpc.changeBps && !mpc.changeBps.isZero() && daysBetween(mpc.date, today) <= 30) {

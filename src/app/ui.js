@@ -343,3 +343,14 @@ export function excelButton(label, filename, build) {
     try { await downloadXlsx(typeof filename === 'function' ? filename() : filename, build()); } catch (err) { console.error(err); toast(`Excel export failed: ${errorText(err)}`, 'bad'); } finally { b.disabled = false; }
   } }, label);
 }
+
+/**
+ * Access Holdings mark. Typeset in Access colours until the official logo file is added: put it in assets/ and set
+ * ACCESS_LOGO to its path (an SVG or PNG on a transparent background).
+ */
+export const ACCESS_LOGO = '';
+export function accessMark() {
+  return ACCESS_LOGO
+    ? h('img', { class: 'access-logo', src: ACCESS_LOGO, alt: 'Access Holdings' })
+    : h('span', { class: 'access-wm', role: 'img', 'aria-label': 'Access Holdings' }, h('span', { class: 'aw-access' }, 'access'), h('span', { class: 'aw-holdings' }, 'holdings'));
+}

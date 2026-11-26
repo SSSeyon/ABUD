@@ -3,7 +3,7 @@
 // Phones (≤ 860 px): a top bar (logo + title) and a bottom tab bar instead of the sidebar.
 import { historyStatus } from './actions.js';
 import { OPTIONAL, start, state, subscribe } from './store.js';
-import { h, todayISO } from './ui.js';
+import { accessMark, h, todayISO } from './ui.js';
 import { computeAlerts, limitsFrom } from './alerts.js';
 import { completedQuarters } from './close.js';
 import { maturityWatch } from './portfolio.js';
@@ -94,10 +94,11 @@ export function icon(key, size) {
   return svg;
 }
 
-/** MBO Capital wordmark, set in type (no image file needed). Leads Home. */
+/** MBO Capital wordmark (set in type) beside the Access Holdings mark, with the app name under them. Leads Home. */
 function brand(cls = 'brand') {
-  return h('a', { class: cls, href: '#/home', 'aria-label': 'MBO Capital ABUD Portfolio: Home' },
-    h('span', { class: 'wordmark' }, h('span', { class: 'wm-mbo' }, 'mbo'), h('span', { class: 'wm-capital' }, 'capital')),
+  return h('a', { class: cls, href: '#/home', 'aria-label': 'MBO Capital and Access Holdings, ABUD Portfolio: Home' },
+    h('span', { class: 'brand-row' }, h('span', { class: 'wordmark' }, h('span', { class: 'wm-mbo' }, 'mbo'), h('span', { class: 'wm-capital' }, 'capital')),
+      h('span', { class: 'brand-sep', 'aria-hidden': 'true' }), accessMark()),
     h('span', { class: 'brand-app' }, 'ABUD Portfolio'));
 }
 

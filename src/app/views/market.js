@@ -12,6 +12,9 @@ const NEEDS = ['transactions', 'instruments', 'fundPrices', 'funds', 'mandateTer
 const bps = (x) => (x == null ? '—' : `${x.gt(0) ? '+' : x.lt(0) ? '−' : ''}${x.abs().toFixed(0)} bps`);
 const pctOrDash = (x, dp = 2) => (x == null ? '—' : fmtPct(x, dp));
 
+const CP_KINDS = { issue: 'Issue (news)', quotation: 'FMDQ quotation', programme: 'Programme', redemption: 'Redemption' };
+const cpFilt = { q: '', kind: '', status: '', source: '', limit: 25 };
+
 export function marketView(rerender) {
   if (!loadedAll(NEEDS)) return h('p', { class: 'muted' }, 'Loading…');
   const data = state.data;
@@ -84,9 +87,24 @@ export function marketView(rerender) {
     table(['Meeting', { label: 'MPR', num: true }, { label: 'Change', num: true }, 'Corridor', ''], mpcRows, 'No MPC decisions stored.')));
 
   // CP quotations.
-  const quotes = [...(data.cpQuotes ?? [])].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 15);
+  const allQuotes = [...(data.cpQuotes ?? [])].sort((a, b) => (a.date < b.date ? 1 : -1));
+  const kindOf = (q) => q.kind ?? (q.source === 'FMDQ' ? 'quotation' : 'issue');
+  const matching = allQuotes.filter((q) => (!cpFilt.kind || kindOf(q) === cpFilt.kind)
+    && (!cpFilt.status || (cpFilt.status === 'confirmed') === !!q.confirmed)
+    && (!cpFilt.source || (q.source ?? 'manual') === cpFilt.source)
+    && (!cpFilt.q || [q.issuer, q.title].some((s) => String(s ?? '').toLowerCase().includes(cpFilt.q.toLowerCase()))));
+  const quotes = matching.slice(0, cpFilt.limit);
+  const cpSel = (label, key, options) => h('label', { class: 'period-picker' }, h('span', { class: 'period-label' }, label),
+    h('select', { class: 'period-select', onchange: (e) => { cpFilt[key] = e.target.value; cpFilt.limit = 25; rerender(); } },
+      [['', 'All'], ...options].map(([v, l]) => h('option', { value: v, selected: cpFilt[key] === v ? true : null }, l))));
+  const cpToolbar = h('div', { class: 'toolbar no-print' },
+    h('label', { class: 'period-picker' }, h('span', { class: 'period-label' }, 'Search'),
+      h('input', { type: 'search', value: cpFilt.q, placeholder: 'Issuer or headline', onchange: (e) => { cpFilt.q = e.target.value; cpFilt.limit = 25; rerender(); } })),
+    cpSel('Kind', 'kind', Object.entries(CP_KINDS)),
+    cpSel('Status', 'status', [['open', 'Needs details'], ['confirmed', 'Confirmed']]),
+    cpSel('Source', 'source', [...new Set(allQuotes.map((q) => q.source ?? 'manual'))].sort().map((s) => [s, s])));
   const cpRows = quotes.map((q) => h('tr', null,
-    h('td', null, fmtDate(q.date)),
+    h('td', null, fmtDate(q.date), h('div', null, h('span', { class: `badge ${kindOf(q) === 'redemption' ? '' : 'info'}` }, CP_KINDS[kindOf(q)] ?? kindOf(q)))),
     h('td', null, q.issuer || '—', q.title ? h('div', { class: 'muted small' }, q.sourceUrl ? h('a', { href: q.sourceUrl, target: '_blank', rel: 'noopener' }, q.title) : q.title) : null),
     h('td', { class: 'num' }, q.size ? fmtNaira(q.size) : '—'),
     h('td', { class: 'num' }, q.tenorDays ?? '—'),
@@ -96,9 +114,11 @@ export function marketView(rerender) {
     h('td', null, h('button', { class: 'link', onclick: () => cpForm(q) }, q.confirmed ? 'Edit' : 'Confirm'), ' ',
       h('button', { class: 'link', onclick: (e) => confirmDialog({ title: 'Delete this quotation?', message: q.title || q.issuer, confirmLabel: 'Delete', danger: true }).then((ok) => ok && runAction(e.target, () => deleteDoc('cpQuotes', q.id, `Deleted CP quotation ${q.issuer || q.title}`), 'Deleted')) }, 'Delete'))));
   parts.push(h('section', { class: 'card' },
-    h('div', { class: 'card-head' }, h('h2', null, 'Commercial paper quotations (FMDQ)'), h('button', { onclick: () => cpForm() }, 'Add quotation')),
-    table(['Date', 'Issuer', { label: 'Size', num: true }, { label: 'Tenor', num: true }, { label: 'Yield', num: true }, 'Rating', 'Status', ''], cpRows, 'No CP quotations stored.'),
-    h('p', { class: 'muted small' }, 'The feed picks up FMDQ quotation notices; confirm the yield, tenor and rating from the issue documents before a CP counts as an option.')));
+    h('div', { class: 'card-head' }, h('h2', null, 'Commercial paper'), h('button', { onclick: () => cpForm() }, 'Add quotation')),
+    cpToolbar,
+    table(['Date', 'Issuer', { label: 'Size', num: true }, { label: 'Tenor', num: true }, { label: 'Yield', num: true }, 'Rating', 'Status', ''], cpRows, allQuotes.length ? 'Nothing matches these filters.' : 'No CP entries stored.'),
+    matching.length > quotes.length ? h('button', { onclick: () => { cpFilt.limit += 50; rerender(); } }, `Show more (${matching.length - quotes.length} left)`) : null,
+    h('p', { class: 'muted small' }, `${matching.length} of ${allQuotes.length} shown by the filters. The feed reads FMDQ's commercial paper posts (quotations and programme registrations) and Nairametrics and BusinessDay articles with commercial paper in the headline, two years back; size, yield and tenor are read from the headline when it gives them. Confirm the yield, tenor and rating from the issue documents before a CP counts as an option.`)));
 
   // Feeds.
   const feedRows = feedHealth(data, today).map((f) => h('tr', null,

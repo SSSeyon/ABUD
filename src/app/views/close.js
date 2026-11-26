@@ -6,7 +6,7 @@ import { NET_PAYOUT_FROM, PAYOUT_PURPOSE, payoutBasis, payoutSchedule } from '..
 import { auctionYield, closeRecord, completedQuarters, computeClose, ntb91 } from '../close.js';
 import { holdingsOn, navSeries, periodReport, TYPE_LABELS } from '../portfolio.js';
 import { loadedAll, state } from '../store.js';
-import { confirmDialog, downloadCsv, fmtDate, fmtNaira, fmtPct, h, openForm, parseMoney, runAction, table, toast, todayISO } from '../ui.js';
+import { accessMark, confirmDialog, downloadCsv, fmtDate, fmtNaira, fmtPct, h, openForm, parseMoney, runAction, table, toast, todayISO } from '../ui.js';
 
 const NEEDS = ['transactions', 'instruments', 'fundPrices', 'mandateTerms', 'funds'];
 const sel = { label: '', auctionId: '', doc: null };
@@ -204,7 +204,8 @@ function documentView(data, f, rerender) {
   const ref = draft ? 'DRAFT: quarter not closed; figures may change.' : `Quarter close record ${r.quarter}, closed ${r.closedAt ? fmtDate(r.closedAt.slice(0, 10)) : ''}${r.status === 'billed' ? `, billed ${fmtDate(r.billedOn)}` : ''}.`;
   const letterhead = (title) => h('div', { class: 'doc-head' },
     h('div', { class: 'wordmark' }, h('span', { class: 'wm-mbo' }, 'mbo'), h('span', { class: 'wm-capital' }, 'capital')),
-    h('div', null, h('h1', null, title), h('p', null, `Access Holdings Plc unclaimed dividend portfolio · ${r.quarter} · ${fmtDate(r.periodStart)} to ${fmtDate(r.periodEnd)}`)));
+    h('div', null, h('h1', null, title), h('p', null, `Access Holdings Plc unclaimed dividend portfolio · ${r.quarter} · ${fmtDate(r.periodStart)} to ${fmtDate(r.periodEnd)}`)),
+    h('div', { class: 'doc-client' }, accessMark()));
   const body = sel.doc === 'fees' ? feeDoc(data, r) : statementDoc(data, r);
   return h('div', { class: `document ${draft ? 'draft' : ''}` }, toolbar,
     letterhead(sel.doc === 'fees' ? 'Fee computation (Clause 8)' : 'Statement of account (Clause 9)'),
