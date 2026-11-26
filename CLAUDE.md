@@ -62,6 +62,11 @@ no withdrawal-instruction verification or signatory register. Do not add them ba
 - Partial liquidation (fixed deposits only): `partialLiquidationPlan` in liquidation.js + `partialLiquidate` in actions.js.
   One change: early `mature` for value-to-date less penalty, new deposit for the balance at the same rate to the
   original maturity (`parentId`), its `invest`, and optionally a `withdrawal` of the amount needed.
+- Quarterly income payout (Access's mandate): `src/app/payout.js`. Up to 2026Q3 the gross income was paid (plain
+  withdrawals in the history); from `NET_PAYOUT_FROM` (2026Q4) payable = the closed quarter's `income` − `mgmtFee` −
+  `incentiveClause8` (never below zero), fixed at close. A payout is a `withdrawal` with `purpose: 'income_payout'` and
+  `quarter`; recorded from the Quarter close card or tagged on the Transactions form. Alert while one is outstanding;
+  the fee computation document shows the income payable.
 - Periods: `src/app/period.js` (QTD, YTD, any quarter, since inception, custom); one shared choice across Dashboard, Reports, History.
 - Alerts: `src/app/alerts.js` computes them live from the data and the limits in force (`limitsFrom(data, date)`: latest
   `limitSets/{effectiveFrom}` version, else `settings/limits`, else plan defaults). New deals over the tenor limit or with

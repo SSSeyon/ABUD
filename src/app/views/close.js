@@ -1,11 +1,12 @@
 // Quarter close: benchmark, management fee, ARIP, hurdle test and incentive (both readings), then close (lock),
 // mark billed, and the client documents: statement of account (Cl. 9) and fee computation (Cl. 8).
-import { BusinessCalendar, dec, managementFeeForPeriod, quarterOf } from '../../engine/index.js';
-import { closeQuarter, markBilled, reopenQuarter } from '../actions.js';
+import { addDays, BusinessCalendar, dec, managementFeeForPeriod, quarterOf } from '../../engine/index.js';
+import { closeQuarter, markBilled, reopenQuarter, saveTransaction } from '../actions.js';
+import { NET_PAYOUT_FROM, PAYOUT_PURPOSE, payoutBasis, payoutSchedule } from '../payout.js';
 import { auctionYield, closeRecord, completedQuarters, computeClose, ntb91 } from '../close.js';
 import { holdingsOn, navSeries, periodReport, TYPE_LABELS } from '../portfolio.js';
 import { loadedAll, state } from '../store.js';
-import { confirmDialog, downloadCsv, fmtDate, fmtNaira, fmtPct, h, openForm, runAction, table, todayISO } from '../ui.js';
+import { confirmDialog, downloadCsv, fmtDate, fmtNaira, fmtPct, h, openForm, parseMoney, runAction, table, toast, todayISO } from '../ui.js';
 
 const NEEDS = ['transactions', 'instruments', 'fundPrices', 'mandateTerms', 'funds'];
 const sel = { label: '', auctionId: '', doc: null };
@@ -133,8 +134,51 @@ export function closeView(rerender) {
   }
   parts.push(h('div', { class: 'toolbar actions-row no-print' }, actions));
   if (f.preview) parts.push(h('p', { class: 'muted small' }, `${sel.label} ends on ${fmtDate(q.end)}; it can be closed after that.`));
+  parts.push(payoutCard(data, today));
   parts.push(historyCard(data));
   return h('div', null, parts);
+}
+
+/** Quarterly income payout to Access: net of MBO's fees from NET_PAYOUT_FROM, fixed when the quarter closes. */
+function payoutCard(data, today) {
+  const sched = payoutSchedule(data, today);
+  const money = (x) => (x == null ? '—' : fmtNaira(x));
+  const rows = sched.map((s) => {
+    const settled = s.closed && s.outstanding.lte('0.5');
+    const status = !s.closed ? (s.inProgress ? 'In progress' : 'Close the quarter to fix it') : settled ? 'Paid' : s.paid.isZero() ? 'Due' : 'Part paid';
+    return h('tr', null,
+      h('td', null, s.quarter),
+      h('td', { class: 'num' }, money(s.income)),
+      h('td', { class: 'num' }, s.fees == null ? 'At close' : fmtNaira(s.fees.negated())),
+      h('td', { class: 'num' }, money(s.payable)),
+      h('td', { class: 'num' }, s.paid.isZero() ? '—' : fmtNaira(s.paid)),
+      h('td', { class: 'num' }, s.outstanding == null ? '—' : fmtNaira(s.outstanding)),
+      h('td', null, h('span', { class: `badge ${status === 'Due' || status === 'Part paid' ? 'warn' : ''}` }, status)),
+      h('td', null, s.closed && !settled ? h('button', { class: 'primary', onclick: () => payoutForm(s, today) }, 'Record payout') : null));
+  });
+  return h('section', { class: 'card' }, h('h2', null, 'Income payout to Access'),
+    h('p', { class: 'muted small' }, `Access's mandate: each quarter's income is paid out to them. Up to 2026Q3 the gross income was paid; from ${NET_PAYOUT_FROM} it is the income net of MBO's fees (management fee + Clause 8 incentive). The amount is fixed when the quarter is closed. A payout is a withdrawal tagged to its quarter.`),
+    table(['Quarter', { label: 'Income', num: true }, { label: 'MBO fees', num: true }, { label: 'Payable', num: true }, { label: 'Paid', num: true }, { label: 'Outstanding', num: true }, 'Status', ''], rows, 'No quarters under the net payout yet.'));
+}
+
+function payoutForm(s, today) {
+  const after = addDays(s.end, 1);
+  openForm({
+    title: `Income payout for ${s.quarter}`,
+    intro: `Income ${fmtNaira(s.income)} less MBO's fees ${fmtNaira(s.fees)} = ${fmtNaira(s.payable)} payable${s.paid.isZero() ? '' : `; ${fmtNaira(s.paid)} already paid`}. Records a withdrawal to Access tagged to ${s.quarter}.`,
+    submitLabel: 'Record payout',
+    fields: [
+      { name: 'date', label: 'Date paid', type: 'date', required: true, value: today > after ? today : after, help: 'After the quarter end: entries dated in a closed quarter are locked.' },
+      { name: 'amount', label: 'Amount (₦)', type: 'money', required: true, value: s.outstanding.toFixed(2) },
+      { name: 'reference', label: 'Reference', type: 'text' },
+      { name: 'notes', label: 'Notes', type: 'textarea', value: `Income payout for ${s.quarter}, net of MBO fees` },
+    ],
+    onSubmit: async (v) => {
+      await saveTransaction(null, { type: 'withdrawal', purpose: PAYOUT_PURPOSE, quarter: s.quarter, date: v.date, amount: parseMoney(v.amount, 'Amount'), reference: v.reference, notes: v.notes },
+        `Income payout for ${s.quarter}`);
+      toast(`Payout for ${s.quarter} recorded.`);
+    },
+  });
 }
 
 function historyCard(data) {
@@ -237,7 +281,12 @@ function feeDoc(data, r) {
       ['Management fee', fmtNaira(r.mgmtFee)],
       [`Incentive fee: ${fmtPct(r.terms.incentiveRate, 0)} × (ARIP − WATBR) × average NAV of ${fmtNaira(r.avgNav)}`, fmtNaira(r.incentiveClause8)],
       ['Total due', fmtNaira(total), 'total'],
-    ])));
+    ])),
+    payoutBasis(r.quarter) === 'net' ? h('section', null, h('h2', null, 'Income payable to Access'), kv([
+      ['Investment income for the quarter', fmtNaira(r.income)],
+      ['Less fees due to MBO Capital', fmtNaira(total.negated())],
+      ['Income payable', fmtNaira(dec(r.income).minus(total).isNegative() ? 0 : dec(r.income).minus(total)), 'total'],
+    ])) : null);
 }
 
 /** How the management fee was charged, from the terms saved with the figures. */

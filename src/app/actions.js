@@ -13,7 +13,7 @@ function clean(obj) {
   return out;
 }
 
-const TX_FIELDS = ['type', 'date', 'amount', 'instrumentId', 'reference', 'notes'];
+const TX_FIELDS = ['type', 'date', 'amount', 'instrumentId', 'purpose', 'quarter', 'reference', 'notes'];
 const pick = (obj, keys) => Object.fromEntries(keys.map((k) => [k, obj[k]]));
 
 /** A document as currently loaded, without its id and timestamp; null when it doesn't exist. */

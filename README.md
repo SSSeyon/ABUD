@@ -30,6 +30,8 @@ Files that matter: `index.html`, `styles.css`, `src/`.
 - **Holdings**: click a holding for its daily statement (opening, inflows, withdrawals, income, closing).
   **Part-liquidate** on a fixed deposit takes out an amount plus the penalty and rolls the balance to the same maturity.
   **Upload fund statement** reads the money market fund Excel from the platform; the fund is then valued at its balance.
+- **Quarter close → Income payout to Access**: each quarter's income goes to Access; from 2026Q4 net of MBO's fees,
+  fixed when the quarter is closed. **Record payout** enters the withdrawal tagged to its quarter.
 - **Reports → Daily NAV**: each day's NAV and the income from every investment, for the chosen period.
 
 ## Scheduled jobs (GitHub Actions)

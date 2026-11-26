@@ -7,7 +7,7 @@ Dates are `"YYYY-MM-DD"` strings. Security rules: [`../firestore.rules`](../fire
 
 | Collection | Doc id | Purpose | Key fields |
 | --- | --- | --- | --- |
-| transactions | auto | Every cash or position movement | type, date, amount, instrumentId, reference, notes, updatedAt |
+| transactions | auto | Every cash or position movement | type, date, amount, instrumentId, reference, notes, updatedAt; a quarterly income payout to Access is a withdrawal with purpose `income_payout` and quarter (`2026Q4`) |
 | instruments | auto | Each deal | type, counterpartyName, custodianName, fundId, pricingBasis, faceValue, cost, units, rate, discountRate, tradeDate, valueDate, maturityDate, updatedAt |
 | mandateTerms | effectiveFrom date | Agreement terms, dated; client details live here | clientName, clientAddress, clientContact, startDate, anniversary, noticeDays, mgmtFeeRate, incentiveRate, hurdleSpread, incentiveReading, feeDayCount (quarterly or act365; app default quarterly), effectiveFrom |
 | funds | auto | Money market funds (Clause 11 flag) | name, managerName, pricingBasis (price or yield), isMboManaged |

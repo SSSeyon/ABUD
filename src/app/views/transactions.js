@@ -1,6 +1,7 @@
 import { dec } from '../../engine/index.js';
 import { deleteTransaction, saveTransaction } from '../actions.js';
 import { ASSET_CLASSES, CLASS_LABELS, txClass, TX_LABELS, TX_SIGN, TYPE_LABELS } from '../portfolio.js';
+import { PAYOUT_PURPOSE, payoutQuarters } from '../payout.js';
 import { loadedAll, state } from '../store.js';
 import { classTag, confirmDialog, fmtDate, fmtNaira, h, openForm, parseMoney, runAction, table, toast, todayISO } from '../ui.js';
 
@@ -31,7 +32,7 @@ export function transactionsView(rerender) {
       'tr',
       null,
       h('td', null, fmtDate(t.date)),
-      h('td', null, TX_LABELS[t.type] ?? t.type),
+      h('td', null, TX_LABELS[t.type] ?? t.type, t.purpose === PAYOUT_PURPOSE ? h('div', { class: 'muted' }, `Income payout ${t.quarter}`) : null),
       h('td', { class: `num ${signed.isNegative() ? 'neg' : ''}` }, fmtNaira(signed)),
       h('td', null, classTag(txClass(t, instruments), CLASS_LABELS[txClass(t, instruments)]), inst ? h('div', { class: 'muted' }, inst.counterpartyName ?? '') : null),
       h('td', null, t.reference ?? '', t.notes ? h('div', { class: 'muted' }, t.notes) : null),
@@ -97,6 +98,7 @@ export function transactionForm(data, tx) {
       { name: 'type', label: 'Type', type: 'select', required: true, value: tx?.type ?? 'inflow', options: types.map((t) => ({ value: t, label: TX_LABELS[t] })) },
       { name: 'instrumentId', label: 'Instrument', type: 'select', required: true, value: tx?.instrumentId ?? '', placeholder: 'Choose the instrument', options: instOptions, showIf: (v) => ['mature', 'fund_redemption'].includes(v.type) },
       { name: 'interestInstrumentId', label: 'Instrument (optional)', type: 'select', value: tx?.instrumentId ?? '', placeholder: 'Not linked', options: instOptions, showIf: (v) => v.type === 'interest' },
+      { name: 'quarter', label: 'Income payout for quarter', type: 'select', value: tx?.purpose === PAYOUT_PURPOSE ? tx.quarter : '', placeholder: 'No: an ordinary withdrawal', options: payoutQuarters(todayISO()).map((q) => ({ value: q.label, label: q.label })), showIf: (v) => v.type === 'withdrawal', help: 'Tag a payment of quarterly income to Access, so Quarter close counts it.' },
       { name: 'date', label: 'Date', type: 'date', required: true, value: tx?.date ?? todayISO() },
       { name: 'amount', label: 'Amount (₦)', type: 'money', required: true, value: tx?.amount ?? '' },
       { name: 'reference', label: 'Reference', type: 'text', value: tx?.reference ?? '' },
@@ -108,6 +110,7 @@ export function transactionForm(data, tx) {
         date: v.date,
         amount: parseMoney(v.amount, 'Amount'),
         instrumentId: v.instrumentId || v.interestInstrumentId,
+        ...(v.type === 'withdrawal' && v.quarter ? { purpose: PAYOUT_PURPOSE, quarter: v.quarter } : {}),
         reference: v.reference,
         notes: v.notes,
       });

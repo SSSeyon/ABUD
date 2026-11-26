@@ -5,6 +5,7 @@ import { fmtNaira } from './ui.js';
 import { closedInstrumentIds, expectedMaturityValue, holdingsOn, navSeries, TYPE_LABELS } from './portfolio.js';
 import { benchmarkFor, completedQuarters } from './close.js';
 import { feedHealth, marketEvents } from './market.js';
+import { payoutSchedule } from './payout.js';
 import { ratingAlerts } from './counterparties.js';
 
 /** Defaults until Settings > Limits is saved. Money as strings, shares as fractions. */
@@ -139,6 +140,13 @@ export function computeAlerts(data, today, limits = limitsFrom(data)) {
     const lastQ = completedQuarters(inception, today)[0];
     if (lastQ && !data.quarterlyResults.some((r) => r.id === lastQ.label)) {
       alerts.push({ key: `close-${lastQ.label}`, level: 'medium', title: `${lastQ.label} not closed yet`, detail: 'Lock the benchmark, run the fee and incentive calculation and issue the statement (Quarter close).', route: 'close', sort: lastQ.end });
+    }
+    // Access's mandate: each closed quarter's income (net of MBO fees) is paid out to them.
+    for (const s of payoutSchedule(data, today)) {
+      if (!s.closed || s.outstanding.lte('0.5')) continue;
+      const days = daysBetween(s.end, today);
+      alerts.push({ key: `payout-${s.quarter}-${s.outstanding.toFixed(0)}`, level: days > 14 ? 'high' : 'medium', title: `Income payout due to Access: ${s.quarter}`,
+        detail: `${fmtM(s.outstanding)} outstanding (income ${fmtM(s.income)} less MBO fees ${fmtM(s.fees)}${s.paid.isZero() ? '' : `, ${fmtM(s.paid)} paid`}). Record it on Quarter close.`, route: 'close', sort: s.end });
     }
   }
   if (Array.isArray(data.feedStatus)) {
