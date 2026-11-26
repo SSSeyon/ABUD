@@ -27,7 +27,18 @@ Files that matter: `index.html`, `styles.css`, `src/`.
 - **Transactions** for inflows from Access, withdrawals, interest and fee debits. Entries can be edited or deleted.
 - **Dashboard** shows NAV (gross of fees), cash, holdings, quarter-to-date return and fee accrued, and maturities due.
 
+## Scheduled jobs (GitHub Actions)
+
+- **Market feeds** (weekdays 07:30 and 19:00 Lagos): CBN auctions, MPC, inflation, FMDQ CP notices and news. No secrets.
+- **Daily digest** (weekdays 07:00 Lagos): emails alerts, maturities due this week, cash to deploy and the top three
+  options. Add repository secrets under Settings > Secrets and variables > Actions: `SMTP_URL` (for example
+  `smtps://smtp.gmail.com:465` or `smtp://smtp.office365.com:587`), `SMTP_USER`, `SMTP_PASS` (an app password),
+  `DIGEST_TO` (comma separated) and optionally `DIGEST_FROM`. Without them the job only prints the digest.
+  Preview it any time at `digest.html`.
+- **Nightly backup** (00:30 Lagos): every collection as one JSON file, kept 30 days as a workflow artifact.
+  Restore it from Settings > Backup.
+
 ## Tests
 
-`powershell -ExecutionPolicy Bypass -File serve.ps1`, then open http://localhost:8080/tests/ (35 tests).
+`powershell -ExecutionPolicy Bypass -File serve.ps1`, then open http://localhost:8080/tests/.
 Open http://localhost:8080/ for the app itself.

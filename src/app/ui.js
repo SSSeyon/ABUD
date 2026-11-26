@@ -271,3 +271,57 @@ export function downloadCsv(filename, rows) {
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
+// ---------- Excel export ----------
+// SheetJS is loaded from jsDelivr the first time a workbook is downloaded. Figures go out as Excel numbers
+// (converted from the exact decimals at the last step, for display only) with a number format.
+
+/** Money cell: a number formatted #,##0.00. */
+export const xMoney = (x) => (x == null || x === '' ? '' : { t: 'n', v: Number(x.toString()), z: '#,##0.00' });
+/** Percentage cell from a fraction: 0.0489 shows as 4.890%. */
+export const xPct = (x, dp = 3) => (x == null || x === '' ? '' : { t: 'n', v: Number(x.toString()), z: `0.${'0'.repeat(dp)}%` });
+/** Date cell from an ISO date (Excel date, shown dd-mmm-yyyy). */
+export const xDate = (iso) => (iso ? { t: 'd', v: new Date(`${iso}T00:00:00Z`), z: 'dd-mmm-yyyy' } : '');
+
+let xlsxLib = null;
+async function sheetJs() {
+  xlsxLib ??= import('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/xlsx.mjs');
+  return xlsxLib;
+}
+
+/**
+ * Download an .xlsx workbook. sheets: [{name, rows: cell[][], widths?: number[]}], where a cell is a string, a number,
+ * or a cell made with xMoney / xPct / xDate. The first row of each sheet is bold-free headers (kept simple).
+ */
+export async function downloadXlsx(filename, sheets) {
+  const XLSX = await sheetJs();
+  const wb = XLSX.utils.book_new();
+  for (const sh of sheets) {
+    const ws = {};
+    let maxC = 0;
+    sh.rows.forEach((row, r) => {
+      row.forEach((val, c) => {
+        if (val === '' || val == null) return;
+        const cell = typeof val === 'object' && 't' in val ? val : typeof val === 'number' ? { t: 'n', v: val } : { t: 's', v: String(val) };
+        ws[XLSX.utils.encode_cell({ r, c })] = cell;
+        maxC = Math.max(maxC, c);
+      });
+    });
+    ws['!ref'] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: Math.max(0, sh.rows.length - 1), c: maxC } });
+    ws['!cols'] = (sh.widths ?? sh.rows[0]?.map((_, c) => Math.min(48, Math.max(10, ...sh.rows.map((row) => {
+      const v = row[c];
+      return v == null ? 0 : typeof v === 'object' ? 14 : String(v).length + 2;
+    }))))).map((wch) => ({ wch }));
+    XLSX.utils.book_append_sheet(wb, ws, sh.name.slice(0, 31).replace(/[\/?*[\]:]/g, ' '));
+  }
+  XLSX.writeFile(wb, filename, { cellDates: true });
+}
+
+/** Button that builds and downloads a workbook, showing errors as a toast. */
+export function excelButton(label, filename, build) {
+  return h('button', { onclick: async (e) => {
+    const b = e.currentTarget;
+    b.disabled = true;
+    try { await downloadXlsx(typeof filename === 'function' ? filename() : filename, build()); } catch (err) { console.error(err); toast(`Excel export failed: ${errorText(err)}`, 'bad'); } finally { b.disabled = false; }
+  } }, label);
+}

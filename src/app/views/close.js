@@ -67,8 +67,8 @@ export function closeView(rerender) {
     kpi('ARIP', fmtPct(r.arip), 'Time-weighted, gross of fees', dec(r.arip).isNegative() ? 'down' : 'up'),
     kpi('Hurdle', fmtPct(r.hurdle), `WATBR ${fmtPct(r.watbr)} + spread`),
     kpi('Hurdle test', r.hurdleMet ? 'Met' : 'Not met', `ARIP ${dec(r.arip).minus(r.hurdle).gte(0) ? 'above' : 'below'} hurdle by ${fmtPct(dec(r.arip).minus(r.hurdle).abs())}`, r.hurdleMet ? 'up' : 'down'),
-    kpi('Management fee', fmtNaira(r.mgmtFee), `${fmtPct(r.terms.mgmtFeeRate)} p.a. on daily NAV`),
-    kpi('Incentive fee (Cl. 8)', fmtNaira(r.incentiveClause8), 'Billing basis'),
+    kpi('Management fee', fmtNaira(r.mgmtFee), feeBasisShort(r.terms)),
+    kpi('Incentive fee (Cl. 8)', fmtNaira(r.incentiveClause8), `Billing basis · Cl. 12 ${fmtNaira(r.incentiveClause12)} · worksheet ${r.incentiveWorksheet ? fmtNaira(r.incentiveWorksheet) : '—'}`),
     kpi('Total fees for the quarter', fmtNaira(total))));
 
   // Benchmark.
@@ -100,14 +100,19 @@ export function closeView(rerender) {
     [`WATBR = ${fmtPct(b.trueYield)} × ${r.days} ÷ 365`, fmtPct(r.watbr, 4)],
     [`Hurdle = (${fmtPct(b.trueYield)} + ${fmtPct(r.terms.hurdleSpread, 2)}) × ${r.days} ÷ 365`, fmtPct(r.hurdle, 4)],
     ['Hurdle met', r.hurdleMet ? 'Yes' : 'No'],
-    [`Management fee: ${fmtPct(r.terms.mgmtFeeRate)} × daily NAV ÷ 365`, fmtNaira(r.mgmtFee)],
+    [`Management fee: ${feeBasisLong(r.terms)}`, fmtNaira(r.mgmtFee)],
     [`Incentive, Clause 8: ${fmtPct(r.terms.incentiveRate, 0)} × (ARIP − WATBR) × average NAV`, fmtNaira(r.incentiveClause8)],
     [`Incentive, Clause 12 (internal only): ${fmtPct(r.terms.incentiveRate, 0)} × (ARIP − hurdle) × average NAV`, fmtNaira(r.incentiveClause12)],
-    ['Gap between the readings', fmtNaira(gap)],
+    ['Gap between Clause 8 and Clause 12', fmtNaira(gap)],
+    ...(r.worksheetIncome ? [
+      ['Worksheet reading: investment income for the quarter (naira, NAV change less contributions)', fmtNaira(r.worksheetIncome)],
+      [`Shadow benchmark income: contributions compounded daily at the latest 91-day true yield + ${fmtPct(r.terms.hurdleSpread, 2)}`, fmtNaira(r.worksheetBenchmarkIncome)],
+      [`Incentive, worksheet reading (internal only): ${fmtPct(r.terms.incentiveRate, 0)} × the excess`, fmtNaira(r.incentiveWorksheet)],
+    ] : []),
   ];
   parts.push(h('section', { class: 'card' }, h('h2', null, 'Workings'),
     h('table', { class: 'bridge' }, h('tbody', null, rowsOf.map(([k, v]) => h('tr', null, h('td', null, k), h('td', { class: 'num' }, String(v)))))),
-    h('p', { class: 'muted small' }, `Mandate terms effective ${fmtDate(r.terms.effectiveFrom)}. Clause 8 is the billing reading; Clause 12 appears only here.`)));
+    h('p', { class: 'muted small' }, `Mandate terms effective ${fmtDate(r.terms.effectiveFrom)}. Clause 8 is the billing reading until Access confirms the basis; Clause 12 and the worksheet reading (how the MCM income sheet billed) appear only here. See Back-test for every quarter since inception.`)));
 
   // Actions.
   const btn = (label, cls, fn) => h('button', { class: cls, onclick: (e) => fn(e.currentTarget) }, label);
@@ -138,10 +143,10 @@ function historyCard(data) {
     h('td', null, h('a', { href: '#/close', onclick: () => { sel.label = r.id; sel.doc = null; } }, r.id)),
     h('td', { class: 'num' }, fmtPct(r.arip)), h('td', { class: 'num' }, fmtPct(r.hurdle)),
     h('td', null, r.hurdleMet ? 'Met' : 'Not met'),
-    h('td', { class: 'num' }, fmtNaira(r.mgmtFee)), h('td', { class: 'num' }, fmtNaira(r.incentiveClause8)), h('td', { class: 'num' }, fmtNaira(r.incentiveClause12)),
+    h('td', { class: 'num' }, fmtNaira(r.mgmtFee)), h('td', { class: 'num' }, fmtNaira(r.incentiveClause8)), h('td', { class: 'num' }, fmtNaira(r.incentiveClause12)), h('td', { class: 'num' }, r.incentiveWorksheet ? fmtNaira(r.incentiveWorksheet) : '—'),
     h('td', null, r.status === 'billed' ? `Billed ${fmtDate(r.billedOn)}` : 'Closed')));
   return h('section', { class: 'card' }, h('h2', null, 'Closed quarters'),
-    table(['Quarter', { label: 'ARIP', num: true }, { label: 'Hurdle', num: true }, 'Test', { label: 'Management fee', num: true }, { label: 'Incentive Cl. 8', num: true }, { label: 'Incentive Cl. 12', num: true }, 'Status'], rows, 'No quarter has been closed yet.'));
+    table(['Quarter', { label: 'ARIP', num: true }, { label: 'Hurdle', num: true }, 'Test', { label: 'Management fee', num: true }, { label: 'Incentive Cl. 8', num: true }, { label: 'Incentive Cl. 12', num: true }, { label: 'Worksheet', num: true }, 'Status'], rows, 'No quarter has been closed yet.'));
 }
 
 // ---------- client documents ----------
@@ -201,7 +206,7 @@ function statementDoc(data, r) {
 function feeDoc(data, r) {
   const rows = navSeries(data, r.periodEnd);
   let accruals = [];
-  try { accruals = managementFeeForPeriod(rows, r.periodStart, r.periodEnd, r.terms.mgmtFeeRate, new BusinessCalendar()).accruals; } catch { accruals = []; }
+  try { accruals = managementFeeForPeriod(rows, r.periodStart, r.periodEnd, r.terms.mgmtFeeRate, new BusinessCalendar(), r.terms.feeDayCount ?? 'act365').accruals; } catch { accruals = []; }
   const months = new Map();
   for (const a of accruals) {
     const k = a.date.slice(0, 7);
@@ -217,7 +222,7 @@ function feeDoc(data, r) {
   const total = dec(r.mgmtFee).plus(r.incentiveClause8);
   return h('div', null,
     h('section', null, h('h2', null, 'Management fee'),
-      h('p', { class: 'muted small' }, `${fmtPct(r.terms.mgmtFeeRate)} a year on each day's NAV (Actual/365); weekends and holidays use the prior business day's NAV.`),
+      h('p', { class: 'muted small' }, `${feeBasisLong(r.terms)}; weekends and holidays use the prior business day's NAV.`),
       table(['Month', { label: 'Days', num: true }, { label: 'Average NAV used', num: true }, { label: 'Fee', num: true }], monthRows)),
     h('section', null, h('h2', null, 'Benchmark and hurdle test'), kv([
       ['Benchmark: 91-day NTB auction', `${fmtDate(b.auctionDate)}${b.stopRate ? `, stop rate ${fmtPct(b.stopRate, 2)}` : ''}`],
@@ -233,4 +238,14 @@ function feeDoc(data, r) {
       [`Incentive fee: ${fmtPct(r.terms.incentiveRate, 0)} × (ARIP − WATBR) × average NAV of ${fmtNaira(r.avgNav)}`, fmtNaira(r.incentiveClause8)],
       ['Total due', fmtNaira(total), 'total'],
     ])));
+}
+
+/** How the management fee was charged, from the terms saved with the figures. */
+function feeBasisShort(terms) {
+  return terms.feeDayCount === 'quarterly' ? `${fmtPct(dec(terms.mgmtFeeRate).div(4), 4)} a quarter on daily NAV` : `${fmtPct(terms.mgmtFeeRate)} p.a. on daily NAV`;
+}
+function feeBasisLong(terms) {
+  return terms.feeDayCount === 'quarterly'
+    ? `${fmtPct(terms.mgmtFeeRate)} a year ÷ 4 per quarter, spread evenly over the quarter's days, on each day's NAV`
+    : `${fmtPct(terms.mgmtFeeRate)} a year on each day's NAV (Actual/365)`;
 }

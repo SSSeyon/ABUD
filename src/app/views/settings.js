@@ -1,5 +1,7 @@
 import { dec } from '../../engine/index.js';
-import { importHistory, saveDoc } from '../actions.js';
+import { importHistory, restoreBackup, saveDoc, saveLimits } from '../actions.js';
+import { RATING_SCALE } from '../counterparties.js';
+import { backupFile } from '../backup.js';
 import { HISTORY_FILE, importStatus } from '../history.js';
 import { loadedAll, state } from '../store.js';
 import { confirmDialog, errorText, fmtDate, fmtNaira, fmtPct, h, openForm, parseMoney, parsePercent, table, toast, todayISO } from '../ui.js';
@@ -19,8 +21,8 @@ export function settingsView(rerender) {
     'div',
     null,
     h('h1', null, 'Settings'),
-    h('div', { class: 'tabs' }, tab('mandate', 'Mandate terms'), tab('limits', 'Limits and alerts'), tab('funds', 'Funds'), tab('import', 'Import history')),
-    section === 'funds' ? fundsSection() : section === 'import' ? importSection(rerender) : section === 'limits' ? limitsSection() : mandateSection(),
+    h('div', { class: 'tabs' }, tab('mandate', 'Mandate terms'), tab('limits', 'Limits and alerts'), tab('funds', 'Funds'), tab('import', 'Import history'), tab('backup', 'Backup')),
+    section === 'backup' ? backupSection() : section === 'funds' ? fundsSection() : section === 'import' ? importSection(rerender) : section === 'limits' ? limitsSection() : mandateSection(),
   );
 }
 
@@ -33,12 +35,13 @@ const LIMIT_FIELDS = [
   { name: 'liquidityDays', label: 'Liquidity horizon (days)', kind: 'int', help: 'Holdings maturing within this many days count as liquid.' },
   { name: 'concentrationShare', label: 'Counterparty concentration limit (% of NAV)', kind: 'pct' },
   { name: 'maxTenorDays', label: 'Longest tenor for a new deal (days)', kind: 'int', help: 'New deals longer than this are refused.' },
+  { name: 'minRating', label: 'Minimum counterparty rating', kind: 'rating', help: 'New deals with a bank, issuer or fund manager rated below this are refused; FGN bills are exempt.' },
 ];
 
 function limitsSection() {
   const limits = limitsFrom(state.data);
   const saved = (state.data.settings ?? []).some((d) => d.id === 'limits');
-  const show = (f) => (f.kind === 'money' ? fmtNaira(limits[f.name]) : f.kind === 'pct' ? fmtPct(limits[f.name], 1) : `${limits[f.name]} days`.replace(/^(\d+) days$/, f.name === 'idleDays' ? '$1 business days' : '$1 days'));
+  const show = (f) => (f.kind === 'rating' ? limits[f.name] : f.kind === 'money' ? fmtNaira(limits[f.name]) : f.kind === 'pct' ? fmtPct(limits[f.name], 1) : `${limits[f.name]} days`.replace(/^(\d+) days$/, f.name === 'idleDays' ? '$1 business days' : '$1 days'));
   return h(
     'section',
     { class: 'card' },
@@ -46,6 +49,7 @@ function limitsSection() {
     h('p', { class: 'muted' }, saved ? 'Alerts on the Dashboard and Alerts screen use these values.' : 'Defaults from the build plan, not yet saved. Edit to confirm them.'),
     state.errors.settings ? h('p', { class: 'bad' }, 'Limits cannot be saved until the updated firestore.rules are published.') : null,
     table(['Limit', { label: 'Value', num: true }], LIMIT_FIELDS.map((f) => h('tr', null, h('td', null, f.label.replace('…', ''), f.help ? h('div', { class: 'muted small' }, f.help) : null), h('td', { class: 'num' }, show(f))))),
+    limitHistory(),
   );
 }
 
@@ -53,22 +57,25 @@ function limitsForm(limits) {
   openForm({
     title: 'Limits and alert thresholds',
     submitLabel: 'Save limits',
-    fields: LIMIT_FIELDS.map((f) => ({
+    fields: [{ name: 'effectiveFrom', label: 'Effective from', type: 'date', required: true, value: todayISO(), help: 'Breaches before this date are judged against the limits then in force.' }, ...LIMIT_FIELDS.map((f) => ({
       name: f.name, label: f.label, help: f.help, required: true,
-      type: f.kind === 'money' ? 'money' : f.kind === 'pct' ? 'percent' : 'number',
+      type: f.kind === 'rating' ? 'select' : f.kind === 'money' ? 'money' : f.kind === 'pct' ? 'percent' : 'number',
+      options: f.kind === 'rating' ? RATING_SCALE.slice(0, 12).map((r) => ({ value: r, label: r })) : undefined,
       value: f.kind === 'pct' ? dec(limits[f.name]).times(100).toFixed() : limits[f.name],
-    })),
+    }))],
     onSubmit: async (v) => {
       const out = {};
       for (const f of LIMIT_FIELDS) {
         if (f.kind === 'money') out[f.name] = parseMoney(v[f.name], f.label);
         else if (f.kind === 'pct') out[f.name] = parsePercent(v[f.name], f.label);
+        else if (f.kind === 'rating') out[f.name] = v[f.name];
         else {
           if (!/^\d+$/.test(v[f.name]) || Number(v[f.name]) < 1) throw new Error(`${f.label.replace('…', '')}: enter a whole number of days`);
           out[f.name] = String(Number(v[f.name]));
         }
       }
-      await saveDoc('settings', 'limits', out);
+      if (!/^d{4}-d{2}-d{2}$/.test(v.effectiveFrom ?? '')) throw new Error('Effective from: enter a date');
+      await saveLimits(out, v.effectiveFrom);
       toast('Limits saved.');
     },
   });
@@ -141,7 +148,7 @@ function mandateSection() {
     h('div', { class: 'page-head' }, h('h2', null, 'Mandate terms'), h('button', { class: 'primary', onclick: () => mandateForm(list[0]) }, 'Add version')),
     h('p', { class: 'muted' }, 'Terms are dated: a change at renewal applies only from its effective date.'),
     table(
-      ['Effective from', 'Client', 'Start date', 'Anniversary', 'Mgmt fee', 'Incentive', 'Hurdle spread', 'Billing reading', ''],
+      ['Effective from', 'Client', 'Start date', 'Anniversary', 'Mgmt fee', 'Fee day count', 'Incentive', 'Hurdle spread', 'Billing reading', ''],
       list.map((m) =>
         h(
           'tr',
@@ -151,6 +158,7 @@ function mandateSection() {
           h('td', null, fmtDate(m.startDate)),
           h('td', null, fmtDate(m.anniversary)),
           h('td', null, fmtPct(m.mgmtFeeRate)),
+          h('td', null, (m.feeDayCount ?? 'quarterly') === 'quarterly' ? 'Quarterly ÷ 4' : 'Actual/365'),
           h('td', null, fmtPct(m.incentiveRate, 1)),
           h('td', null, fmtPct(m.hurdleSpread, 2)),
           h('td', null, m.incentiveReading === 'clause_12' ? 'Clause 12' : 'Clause 8'),
@@ -175,13 +183,17 @@ function mandateForm(prev, editing = false) {
       { name: 'clientAddress', label: 'Client address', type: 'textarea', value: prev?.clientAddress ?? '' },
       { name: 'clientContact', label: 'Client contact', type: 'text', value: prev?.clientContact ?? '' },
       { name: 'startDate', label: 'Mandate start date', type: 'date', required: true, value: prev?.startDate ?? '' },
-      { name: 'anniversary', label: 'Anniversary (renewal) date', type: 'date', value: prev?.anniversary ?? '', help: 'Open decision: the 2024 agreement leaves the commencement date blank.' },
+      { name: 'anniversary', label: 'Anniversary (renewal) date', type: 'date', value: prev?.anniversary ?? '2021-08-11', help: 'Commencement 11 Aug 2021 (first inflow), confirmed 26 Nov 2026; renewal alerts count to each anniversary.' },
       { name: 'mgmtFeeRate', label: 'Management fee (% p.a.)', type: 'percent', required: true, value: pctInput(prev?.mgmtFeeRate, '0.75') },
       { name: 'incentiveRate', label: 'Incentive fee (% of outperformance)', type: 'percent', required: true, value: pctInput(prev?.incentiveRate, '10') },
       { name: 'hurdleSpread', label: 'Hurdle spread over 91-day true yield (%)', type: 'percent', required: true, value: pctInput(prev?.hurdleSpread, '2') },
       {
         name: 'incentiveReading', label: 'Incentive billing reading', type: 'select', required: true, value: prev?.incentiveReading ?? 'clause_8',
         options: [{ value: 'clause_8', label: 'Clause 8: outperformance over WATBR (current practice)' }, { value: 'clause_12', label: 'Clause 12: outperformance over the hurdle' }],
+      },
+      {
+        name: 'feeDayCount', label: 'Management fee day count', type: 'select', required: true, value: prev?.feeDayCount ?? 'quarterly',
+        options: [{ value: 'quarterly', label: 'Annual rate ÷ 4 per quarter, spread over its days (as billed; confirmed)' }, { value: 'act365', label: 'Actual/365 per day' }],
       },
     ],
     onSubmit: async (v) => {
@@ -191,6 +203,7 @@ function mandateForm(prev, editing = false) {
         incentiveRate: parsePercent(v.incentiveRate, 'Incentive fee'),
         hurdleSpread: parsePercent(v.hurdleSpread, 'Hurdle spread'),
         noticeDays: 30,
+        feeDayCount: v.feeDayCount,
       };
       await saveDoc('mandateTerms', v.effectiveFrom, data);
       toast('Mandate terms saved.');
@@ -238,4 +251,53 @@ function fundForm(f) {
       toast('Fund saved.');
     },
   });
+}
+
+/** Every saved version of the limits, newest first. */
+function limitHistory() {
+  const versions = [...(state.data.limitSets ?? [])].sort((a, b) => (a.effectiveFrom < b.effectiveFrom ? 1 : -1));
+  if (!versions.length) return h('p', { class: 'muted small' }, 'No dated versions yet: the next save starts the history, so later breach reports judge each date against the limits then in force.');
+  return h('div', null, h('h3', null, 'Versions'),
+    table(['Effective from', { label: 'Idle cash', num: true }, { label: 'Liquidity', num: true }, { label: 'Concentration', num: true }, { label: 'Max tenor', num: true }, 'Min rating'],
+      versions.map((v) => h('tr', null, h('td', null, fmtDate(v.effectiveFrom)), h('td', { class: 'num' }, fmtNaira(v.idleCash)), h('td', { class: 'num' }, fmtPct(v.liquidityShare, 1)),
+        h('td', { class: 'num' }, fmtPct(v.concentrationShare, 1)), h('td', { class: 'num' }, `${v.maxTenorDays} days`), h('td', null, v.minRating ?? '—')))));
+}
+
+// ---------- backup ----------
+function backupSection() {
+  const counts = Object.entries(state.data).filter(([, v]) => Array.isArray(v)).map(([k, v]) => `${k} ${v.length}`).join(' · ');
+  const status = h('p', { class: 'muted small' });
+  const input = h('input', { type: 'file', accept: 'application/json,.json' });
+  return h('section', { class: 'card' },
+    h('h2', null, 'Backup and restore'),
+    h('p', null, 'Download every collection as one JSON file. A scheduled GitHub job also saves a copy each night (Actions > Nightly backup, kept 30 days).'),
+    h('p', { class: 'muted small' }, counts),
+    h('div', { class: 'toolbar actions-row' },
+      h('button', { class: 'primary', onclick: () => {
+        const file = backupFile(state.data);
+        const url = URL.createObjectURL(new Blob([JSON.stringify(file, null, 1)], { type: 'application/json' }));
+        const a = h('a', { href: url, download: `ABUD backup ${todayISO()}.json` });
+        document.body.append(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      } }, 'Download backup')),
+    h('h3', null, 'Restore'),
+    h('p', { class: 'muted small' }, 'Writes every document in the file back, replacing documents with the same id. Documents added since the backup stay. The change history is not restored (it is append-only).'),
+    h('div', { class: 'toolbar actions-row' }, input,
+      h('button', { class: 'danger', onclick: async (e) => {
+        const btn = e.currentTarget;
+        const file = input.files?.[0];
+        if (!file) { toast('Choose a backup file first.', 'bad'); return; }
+        let parsed;
+        try { parsed = JSON.parse(await file.text()); } catch { toast('That file is not valid JSON.', 'bad'); return; }
+        const n = Object.values(parsed.collections ?? {}).reduce((s, l) => s + l.length, 0);
+        const ok = await confirmDialog({ title: 'Restore this backup?', message: `${n} documents from ${parsed.takenAt ?? 'an unknown date'} will be written back, replacing current versions with the same id.`, confirmLabel: 'Restore', danger: true });
+        if (!ok) return;
+        btn.disabled = true;
+        try {
+          await restoreBackup(parsed, (done, total) => { status.textContent = `${done} of ${total} documents written…`; });
+          status.textContent = `Restored ${n} documents.`;
+          toast('Backup restored.');
+        } catch (err) { status.textContent = ''; toast(errorText(err), 'bad'); } finally { btn.disabled = false; }
+      } }, 'Restore from file')),
+    status);
 }

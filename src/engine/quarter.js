@@ -36,7 +36,7 @@ export function closePeriod(input) {
       ? dec(input.benchmark.trueYield)
       : trueYieldFromDiscount(input.benchmark.discountRate, input.benchmark.tenorDays);
 
-  const fee = managementFeeForPeriod(navRows, periodStart, periodEnd, terms.mgmtFeeRate, calendar);
+  const fee = managementFeeForPeriod(navRows, periodStart, periodEnd, terms.mgmtFeeRate, calendar, terms.feeDayCount ?? 'act365');
   let arip = timeWeightedReturn(inPeriod, prevNav);
   if (input.rateRoundingDp !== undefined) arip = roundRate(arip, input.rateRoundingDp);
   const { watbr, hurdle } = periodRates(trueYield, terms.hurdleSpread, days, input.rateRoundingDp);

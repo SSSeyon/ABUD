@@ -4,7 +4,7 @@ import { dec } from '../../engine/index.js';
 import { deleteDoc, saveDoc } from '../actions.js';
 import { limitsFrom } from '../alerts.js';
 import { auctionYield } from '../close.js';
-import { feedHealth, latestByTenor, marketEvents, mpcHistory, rankOpportunities } from '../market.js';
+import { feedHealth, latestByTenor, latestNews, marketEvents, mpcHistory, rankOpportunities, upcomingAuctions } from '../market.js';
 import { loadedAll, state } from '../store.js';
 import { confirmDialog, fmtDate, fmtNaira, fmtPct, h, openForm, parseDecimal, parseMoney, parsePercent, runAction, table, todayISO } from '../ui.js';
 
@@ -107,6 +107,24 @@ export function marketView(rerender) {
     h('td', null, f.doc?.lastSuccessAt ? fmtDate(f.doc.lastSuccessAt.slice(0, 10)) : '—'),
     h('td', { class: 'num' }, f.doc?.added ?? '—'),
     h('td', { class: 'small' }, f.status === 'failing' ? f.doc?.lastError ?? '' : '')));
+  // Upcoming auctions and news.
+  const upcoming = upcomingAuctions(data, today);
+  const KIND = { ntb: 'NTB', omo: 'OMO', fgn_bond: 'FGN bond' };
+  const news = latestNews(data);
+  parts.push(h('div', { class: 'grid-2' },
+    h('section', { class: 'card' },
+      h('div', { class: 'card-head' }, h('h2', null, 'Upcoming auctions (45 days)'), h('button', { onclick: () => calendarForm() }, 'Add date')),
+      table(['Date', 'Auction', 'Notes', ''], upcoming.map((u) => h('tr', null,
+        h('td', null, fmtDate(u.date)), h('td', null, KIND[u.kind] ?? u.kind),
+        h('td', { class: u.projected ? 'muted small' : null }, u.label),
+        h('td', null, u.doc ? h('button', { class: 'danger', onclick: (e) => runAction(e.currentTarget, () => deleteDoc('auctionCalendar', u.doc.id, `Removed ${KIND[u.kind]} auction date ${u.date}`), 'Removed') }, 'Remove') : null))),
+      'No auction dates known. Add them from the CBN or DMO calendar.'),
+      h('p', { class: 'muted small' }, 'Projected dates follow the recent auction cycle. Entered dates (from the CBN NTB calendar or DMO bond calendar) replace the projection for that market.')),
+    h('section', { class: 'card' }, h('h2', null, 'Market news'),
+      news.length
+        ? h('ul', { class: 'news' }, news.map((n) => h('li', null, h('a', { href: n.url, target: '_blank', rel: 'noopener' }, n.title), h('div', { class: 'muted small' }, `${n.source} · ${fmtDate(n.date)}`))))
+        : h('p', { class: 'muted' }, state.errors.news ? 'News needs the updated Firestore rules.' : 'No news yet: the feed job adds money-market stories (Nairametrics, BusinessDay) and CBN circulars.'))));
+
   parts.push(h('section', { class: 'card' }, h('h2', null, 'Feed status'),
     table(['Feed', 'Status', 'Last success', { label: 'Added last run', num: true }, 'Last error'], feedRows),
     h('p', { class: 'muted small' }, 'A GitHub Actions job ("Market feeds", tools/feeds/fetch-feeds.ps1) reads the CBN and FMDQ sites twice each weekday and adds anything new. It can also be run by hand from the repository\'s Actions tab. Bank deposit rates are not captured.')));
@@ -188,5 +206,19 @@ function cpForm(q = {}) {
       delete doc.id;
       await saveDoc('cpQuotes', q.id ?? null, doc);
     },
+  });
+}
+
+function calendarForm() {
+  openForm({
+    title: 'Add an auction date',
+    intro: 'From the CBN NTB auction calendar or the DMO bond calendar.',
+    fields: [
+      { name: 'date', label: 'Auction date', type: 'date', required: true, value: todayISO() },
+      { name: 'kind', label: 'Market', type: 'select', required: true, value: 'ntb', options: [{ value: 'ntb', label: 'NTB' }, { value: 'omo', label: 'OMO' }, { value: 'fgn_bond', label: 'FGN bond' }] },
+      { name: 'tenors', label: 'Tenors on offer', type: 'text', value: '91, 182, 364 days' },
+      { name: 'notes', label: 'Notes (offer size, settlement date)', type: 'text', value: '' },
+    ],
+    onSubmit: (v) => saveDoc('auctionCalendar', `${v.kind}-${v.date}`, { date: v.date, kind: v.kind, tenors: v.tenors, notes: v.notes }),
   });
 }

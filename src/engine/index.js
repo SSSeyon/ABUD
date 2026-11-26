@@ -6,6 +6,7 @@ export * from './incentive.js';
 export * from './nav.js';
 export * from './quarter.js';
 export * from './returns.js';
+export * from './shadow.js';
 export * from './termination.js';
 export * from './types.js';
 export * from './valuation.js';

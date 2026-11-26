@@ -3,12 +3,15 @@ import { limitsFrom } from '../alerts.js';
 import { createDeal, rollOverDeal, saveFundPrice, saveTransaction, updateDeal } from '../actions.js';
 import { ASSET_CLASSES, closedInstrumentIds, DEPOSIT_TYPES, engineInputs, expectedMaturityValue, openingTransactions, toEngineInstrument, TYPE_LABELS } from '../portfolio.js';
 import { loadedAll, state } from '../store.js';
-import { classTag, fmtDate, fmtNaira, fmtPct, h, openForm, parseDecimal, parseMoney, parsePercent, table, toast, todayISO } from '../ui.js';
+import { classTag, excelButton, fmtDate, fmtNaira, fmtPct, h, openForm, parseDecimal, parseMoney, parsePercent, table, toast, todayISO, xDate, xMoney, xPct } from '../ui.js';
+import { counterpartyName, custodianExposure, dealRatingCheck } from '../counterparties.js';
 
 const DISCOUNT = ['ntb', 'omo', 'commercial_paper'];
 const NEEDS = ['transactions', 'instruments', 'fundPrices', 'funds'];
 
-export function holdingsView() {
+const filt = { q: '', type: '', counterparty: '', custodian: '', within: '' };
+
+export function holdingsView(rerender) {
   if (!loadedAll(NEEDS)) return h('p', { class: 'muted' }, 'Loading…');
   const data = state.data;
   const today = todayISO();
@@ -17,9 +20,17 @@ export function holdingsView() {
   const valuer = new Valuer(new FundPriceBook(engineInputs(data).fundPrices));
   const funds = new Map((data.funds ?? []).map((f) => [f.id, f]));
 
-  const live = (data.instruments ?? [])
+  const allLive = (data.instruments ?? [])
     .filter((i) => !closed.has(i.id))
     .sort((a, b) => ((a.maturityDate ?? '9999') < (b.maturityDate ?? '9999') ? -1 : 1));
+  const cpOf = (i) => counterpartyName(i, data.funds);
+  const horizon = filt.within ? addDays(today, Number(filt.within)) : null;
+  const q = filt.q.trim().toLowerCase();
+  const live = allLive.filter((i) => (!filt.type || i.type === filt.type)
+    && (!filt.counterparty || cpOf(i) === filt.counterparty)
+    && (!filt.custodian || (i.custodianName?.trim() || "Not recorded") === filt.custodian)
+    && (!horizon || (i.maturityDate && i.maturityDate <= horizon))
+    && (!q || [cpOf(i), i.custodianName, TYPE_LABELS[i.type], funds.get(i.fundId)?.name].some((s) => String(s ?? "").toLowerCase().includes(q))));
 
   const valueOf = (i) => {
     try {
@@ -62,17 +73,64 @@ export function holdingsView() {
   }
   if (rows.length) rows.push(h('tr', { class: 'total' }, h('td', { colspan: 8 }, 'Total holdings'), h('td', { class: 'num' }, fmtNaira(total)), h('td', null)));
 
+  const sel = (label, key, options) => h('label', { class: 'period-picker' }, h('span', { class: 'period-label' }, label),
+    h('select', { class: 'period-select', onchange: (e) => { filt[key] = e.target.value; rerender(); } },
+      [['', 'All'], ...options].map(([v, l]) => h('option', { value: v, selected: filt[key] === v ? true : null }, l))));
+  const uniq = (xs) => [...new Set(xs)].sort().map((x) => [x, x]);
+  const filtered = Object.values(filt).some(Boolean);
+  const toolbar = h('div', { class: 'toolbar no-print' },
+    h('label', { class: 'period-picker' }, h('span', { class: 'period-label' }, 'Search'),
+      h('input', { type: 'search', value: filt.q, placeholder: 'Counterparty, custodian, fund', onchange: (e) => { filt.q = e.target.value; rerender(); } })),
+    sel('Class', 'type', ASSET_CLASSES.filter((c) => allLive.some((i) => i.type === c.key)).map((c) => [c.key, c.label])),
+    sel('Counterparty', 'counterparty', uniq(allLive.map(cpOf))),
+    sel('Custodian', 'custodian', uniq(allLive.map((i) => i.custodianName?.trim() || 'Not recorded'))),
+    sel('Maturing within', 'within', [['7', '7 days'], ['30', '30 days'], ['90', '90 days'], ['182', '6 months']]),
+    filtered ? h('button', { onclick: () => { Object.keys(filt).forEach((k) => { filt[k] = ''; }); rerender(); } }, 'Clear filters') : null,
+    excelButton('Download Excel', () => `ABUD holdings ${today}.xlsx`, () => holdingsWorkbook(data, live, valueOf, cpOf, today)));
+
+  let custodians = [];
+  try { custodians = custodianExposure(data, today); } catch { custodians = []; }
+  const custTotal = custodians.reduce((t, c) => t.plus(c.value), dec(0));
   return h(
     'div',
     null,
-    h('div', { class: 'page-head' }, h('div', null, h('h1', null, 'Holdings'), h('p', { class: 'subtitle' }, `Open positions at end of ${fmtDate(today)}, by asset class`)), h('button', { class: 'primary', onclick: () => dealForm(data) }, 'New deal')),
+    h('div', { class: 'page-head' }, h('div', null, h('h1', null, 'Holdings'), h('p', { class: 'subtitle' }, `Open positions at end of ${fmtDate(today)}, by asset class${filtered ? ` · ${live.length} of ${allLive.length} shown` : ''}`)), h('button', { class: 'primary', onclick: () => dealForm(data) }, 'New deal')),
+    toolbar,
     table(
       ['Instrument', 'Counterparty', { label: 'Cost', num: true }, { label: 'At maturity', num: true }, 'Rate', 'Value date', 'Maturity', { label: 'Days left', num: true }, { label: 'Value today', num: true }, ''],
       rows,
-      'No holdings yet. Use "New deal" to record an investment.',
+      filtered ? 'No holdings match these filters.' : 'No holdings yet. Use "New deal" to record an investment.',
     ),
     h('p', { class: 'muted' }, 'Values are end of day: bills and CPs at amortised cost, deposits with accrued interest, funds at the latest price or accrued yield. Matured and redeemed holdings drop off this list once the maturity or redemption is recorded.'),
+    h('section', { class: 'card' }, h('h2', null, 'Holdings by custodian'),
+      table(['Custodian', { label: 'Holdings', num: true }, { label: 'Value', num: true }, { label: 'Share', num: true }],
+        custodians.map((c) => h('tr', null,
+          h('td', null, h('a', { href: '#/holdings', onclick: (e) => { e.preventDefault(); filt.custodian = c.name; rerender(); } }, c.name)),
+          h('td', { class: 'num' }, String(c.count)), h('td', { class: 'num' }, fmtNaira(c.value)),
+          h('td', { class: 'num' }, custTotal.isZero() ? '—' : fmtPct(c.value.div(custTotal), 1)))),
+        'No holdings.'),
+      h('p', { class: 'muted small' }, 'Custodians come from each deal. Keep the names consistent with the register on the Counterparties screen.')),
   );
+}
+
+/** Refuses a new deal with a counterparty rated below the minimum in Settings > Limits. */
+function checkRating(data, inst, date = todayISO()) {
+  const msg = dealRatingCheck(data, inst, limitsFrom(data, date).minRating, date);
+  if (msg) throw new Error(msg);
+}
+
+function holdingsWorkbook(data, live, valueOf, cpOf, today) {
+  const funds = new Map((data.funds ?? []).map((f) => [f.id, f]));
+  const rows = [['Class', 'Instrument', 'Fund', 'Counterparty', 'Custodian', 'Cost', 'At maturity', 'Rate', 'Discount rate', 'Value date', 'Maturity', 'Days left', `Value at ${today}`]];
+  for (const i of live) {
+    const v = valueOf(i);
+    rows.push([
+      ASSET_CLASSES.find((c) => c.key === i.type)?.label ?? i.type, TYPE_LABELS[i.type], funds.get(i.fundId)?.name ?? '', cpOf(i), i.custodianName ?? '',
+      xMoney(i.cost), xMoney(i.faceValue ?? expectedMaturityValue(i)), DEPOSIT_TYPES.has(i.type) ? xPct(i.rate, 2) : '', i.discountRate ? xPct(i.discountRate, 2) : '',
+      xDate(i.valueDate), xDate(i.maturityDate), i.maturityDate ? daysBetween(today, i.maturityDate) : '', typeof v === 'string' ? v : xMoney(v),
+    ]);
+  }
+  return [{ name: 'Holdings', rows }];
 }
 
 function actionsFor(i, fund, openingTx) {
@@ -130,6 +188,7 @@ function rolloverForm(i, openingTx) {
         type: i.type, counterpartyName: i.counterpartyName, custodianName: i.custodianName,
         tradeDate: v.date, valueDate: v.date, maturityDate, cost,
       };
+      checkRating(state.data, next, v.date);
       if (DEPOSIT_TYPES.has(i.type)) next.rate = parsePercent(v.rate, 'Interest rate');
       if (isDiscount) {
         // Discount basis, Actual/365: price = face x (1 - d x t / 365), so face = cost / (1 - d x t / 365).
@@ -198,6 +257,7 @@ function dealForm(data, inst, openingTx) {
         next.pricingBasis = fund.pricingBasis;
         if (fund.pricingBasis === 'price') next.units = parseDecimal(v.units, 'Units');
       }
+      if (!inst) checkRating(data, next);
       if (inst) {
         if (inst.type !== next.type && (inst.type === 'money_market_fund') !== (next.type === 'money_market_fund')) {
           throw new Error('A fund holding cannot be changed into a bill or deposit (or back). Delete the investment entry and enter a new deal.');

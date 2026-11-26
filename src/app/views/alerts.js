@@ -21,6 +21,7 @@ export function alertsView() {
     h('section', { class: 'card' }, alerts.length ? alertList(alerts) : h('p', { class: 'muted' }, 'Nothing needs attention.')),
     h('p', { class: 'muted small' },
       `Limits in use: idle cash ${fmtNaira(limits.idleCash)} for over ${limits.idleDays} business days · liquidity ${fmtPct(limits.liquidityShare, 0)} of NAV within ${limits.liquidityDays} days · concentration ${fmtPct(limits.concentrationShare, 0)} of NAV · tenor ${limits.maxTenorDays} days · maturities flagged ${limits.maturityWarnDays} days ahead. Change them in `,
-      h('a', { href: '#/settings' }, 'Settings'), '. Email alerts are not set up yet.'),
+      h('a', { href: '#/settings' }, 'Settings'), '. A daily email digest of these alerts, maturities and the top options goes out at 07:00 on weekdays once the mail secrets are set in GitHub (see README). ',
+      h('a', { href: 'digest.html', target: '_blank', rel: 'noopener' }, 'Preview the digest')),
   );
 }

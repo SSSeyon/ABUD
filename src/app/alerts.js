@@ -4,6 +4,7 @@ import { addDays, BusinessCalendar, daysBetween, dec, quarterOf, ZERO } from '..
 import { closedInstrumentIds, expectedMaturityValue, holdingsOn, navSeries, TYPE_LABELS } from './portfolio.js';
 import { benchmarkFor, completedQuarters } from './close.js';
 import { feedHealth, marketEvents } from './market.js';
+import { ratingAlerts } from './counterparties.js';
 
 /** Defaults until Settings > Limits is saved. Money as strings, shares as fractions. */
 export const DEFAULT_LIMITS = Object.freeze({
@@ -14,10 +15,17 @@ export const DEFAULT_LIMITS = Object.freeze({
   concentrationShare: '0.25', // largest counterparty as a share of NAV
   maxTenorDays: '364', // longest new deal allowed
   maturityWarnDays: '14',
+  minRating: 'BBB', // lowest counterparty rating for new deals (confirmed 26 Nov 2026); FGN paper exempt
 });
 
-export function limitsFrom(data) {
-  const saved = (data.settings ?? []).find((d) => d.id === 'limits') ?? {};
+/**
+ * Limits in force on a date (default today): the latest Settings > Limits version effective on or before it
+ * (limitSets, one per change), else the single saved settings/limits document, else the plan's defaults.
+ */
+export function limitsFrom(data, date) {
+  const on = date ?? new Date().toISOString().slice(0, 10);
+  const versions = (data.limitSets ?? []).filter((v) => v.effectiveFrom && v.effectiveFrom <= on).sort((a, b) => (a.effectiveFrom < b.effectiveFrom ? 1 : -1));
+  const saved = versions[0] ?? (data.settings ?? []).find((d) => d.id === 'limits') ?? {};
   const out = { ...DEFAULT_LIMITS };
   for (const k of Object.keys(DEFAULT_LIMITS)) if (saved[k] != null && saved[k] !== '') out[k] = String(saved[k]);
   return out;
@@ -143,6 +151,9 @@ export function computeAlerts(data, today, limits = limitsFrom(data)) {
     }
     for (const e of marketEvents(data, today)) alerts.push({ key: e.key, level: 'low', title: e.title, detail: e.detail, route: 'market', sort: e.date });
   }
+
+  // Counterparty ratings (once the register has loaded).
+  alerts.push(...ratingAlerts(data, today, limits.minRating));
 
   const rank = { high: 0, medium: 1, low: 2 };
   return alerts.sort((a, b) => rank[a.level] - rank[b.level] || (a.sort < b.sort ? -1 : a.sort > b.sort ? 1 : 0));

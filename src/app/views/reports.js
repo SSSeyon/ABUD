@@ -1,10 +1,11 @@
 // Period report: pick a period, see NAV movement, return, income by asset class, transactions and holdings.
 import { addDays, dec } from '../../engine/index.js';
 import { periodPicker, resolvePeriod, sharedPeriod } from '../period.js';
-import { allocationBar, lineChart } from '../charts.js';
+import { allocationBar, lineChart, sankey } from '../charts.js';
+import { periodFlows } from '../flows.js';
 import { ASSET_CLASSES, CLASS_LABELS, holdingsOn, periodReport, txClass, TX_LABELS, TX_SIGN, TYPE_LABELS } from '../portfolio.js';
 import { loadedAll, state } from '../store.js';
-import { classTag, fmtDate, fmtNaira, fmtPct, h, table, todayISO } from '../ui.js';
+import { classTag, excelButton, fmtDate, fmtNaira, fmtPct, h, table, todayISO, xDate, xMoney, xPct } from '../ui.js';
 
 const NEEDS = ['transactions', 'instruments', 'fundPrices'];
 const sel = { cls: '' };
@@ -23,7 +24,9 @@ export function reportsView(rerender) {
 
   const period = resolvePeriod(sharedPeriod, inception, today);
   const { start, end } = period;
-  const picker = h('div', { class: 'toolbar no-print' }, periodPicker(sharedPeriod, inception, today, rerender), h('button', { onclick: () => window.print() }, 'Print / PDF'));
+  const picker = h('div', { class: 'toolbar no-print' }, periodPicker(sharedPeriod, inception, today, rerender), h('button', { onclick: () => window.print() }, 'Print / PDF'),
+    excelButton('Download Excel', () => `ABUD report  to .xlsx`, () => reportWorkbook(data, periodReport(data, start, end))),
+    h('a', { class: 'button-link', href: '#/management' }, 'Management report →'));
 
   const head = h('div', { class: 'page-head' }, h('div', null, h('h1', null, `Portfolio report: ${period.key === 'custom' ? 'custom period' : period.label}`), h('p', { class: 'subtitle' }, `Access Holdings Plc unclaimed dividend portfolio · ${fmtDate(start)} to ${fmtDate(end)}`)));
   if (!start || !end || start > end) return h('div', null, head, picker, h('div', { class: 'card' }, h('p', null, 'Choose a start date on or before the end date.')));
@@ -108,6 +111,9 @@ export function reportsView(rerender) {
           h('tr', { class: i === 0 || i === bridge.length - 1 ? 'total' : null },
             h('td', null, label, note ? h('div', { class: 'muted small' }, note) : null),
             h('td', { class: `num ${v.isNegative() ? 'neg' : ''}` }, fmtNaira(v)))))))),
+    h('section', { class: 'card' }, h('h2', null, 'Where the money came from and went'),
+      h('p', { class: 'muted small' }, 'Opening NAV, inflows and income on the left; withdrawals, fees and what is held at the end, by asset class, on the right. Hover a band for its value.'),
+      (() => { const f = periodFlows(r); return sankey(f.left, f.right, { middle: 'Portfolio', label: 'Money flows for the period' }); })()),
     h('section', { class: 'card' }, h('h2', null, 'By asset class'),
       h('p', { class: 'muted small' }, 'Income = closing value − opening value − money invested + money returned. Yield is income over the average value held, annualised.'),
       table(['Asset class', { label: 'Opening value', num: true }, { label: 'Invested', num: true }, { label: 'Returned', num: true }, { label: 'Income', num: true }, { label: 'Yield p.a.', num: true }, { label: 'Closing value', num: true }], classRows)),
@@ -119,4 +125,27 @@ export function reportsView(rerender) {
     h('section', { class: 'card' }, h('h2', null, `Holdings at ${fmtDate(end)}`),
       table(['Instrument', 'Counterparty', { label: 'Cost', num: true }, 'Value date', 'Maturity', { label: 'Value', num: true }], holdRows, 'Nothing held at the end of the period.')),
   );
+}
+
+function reportWorkbook(data, r) {
+  const summary = [
+    ['Portfolio report', `${r.start} to ${r.end}`],
+    ['Opening NAV', xMoney(r.openingNav)], ['Inflows from Access', xMoney(r.inflows)], ['Withdrawals', xMoney(r.withdrawals.negated())],
+    ['Fees and bank charges', xMoney(r.fees.negated())], ['Investment income', xMoney(r.income)], ['Closing NAV', xMoney(r.closingNav)],
+    ['Return for the period (time-weighted, gross of fees)', xPct(r.twr, 3)], ['Annualised', r.annualised ? xPct(r.annualised, 3) : ''], ['Days', r.days],
+  ];
+  const classes = [['Asset class', 'Opening value', 'Invested', 'Returned', 'Income', 'Yield p.a.', 'Closing value']];
+  for (const c of r.classes) classes.push([c.label, xMoney(c.opening), c.key === 'cash' ? '' : xMoney(c.invested), c.key === 'cash' ? '' : xMoney(c.returned), c.key === 'cash' ? '' : xMoney(c.income), c.yield ? xPct(c.yield, 2) : '', xMoney(c.closing)]);
+  const instruments = new Map((data.instruments ?? []).map((i) => [i.id, i]));
+  const txs = [['Date', 'Type', 'Asset class', 'Counterparty', 'Reference', 'Cash effect']];
+  for (const t of r.transactions) {
+    const signed = t.type === 'rollover' ? dec(t.amount) : dec(t.amount).times(TX_SIGN[t.type] ?? 1);
+    const inst = t.instrumentId ? instruments.get(t.instrumentId) : null;
+    txs.push([xDate(t.date), TX_LABELS[t.type] ?? t.type, CLASS_LABELS[txClass(t, instruments)], inst?.counterpartyName ?? '', t.reference ?? '', xMoney(signed)]);
+  }
+  const held = [['Instrument', 'Counterparty', 'Custodian', 'Cost', 'Value date', 'Maturity', `Value at ${r.end}`]];
+  for (const { inst, value } of holdingsOn(data, r.end)) held.push([TYPE_LABELS[inst.type], inst.counterpartyName ?? '', inst.custodianName ?? '', xMoney(inst.cost), xDate(inst.valueDate), xDate(inst.maturityDate), xMoney(value)]);
+  const nav = [['Date', 'Cash', 'Holdings', 'NAV', 'Net external flow']];
+  for (const x of r.rows) nav.push([xDate(x.date), xMoney(x.cash), xMoney(x.holdingsValue), xMoney(x.nav), xMoney(x.netFlow)]);
+  return [{ name: 'Summary', rows: summary, widths: [50, 22] }, { name: 'By asset class', rows: classes }, { name: 'Transactions', rows: txs }, { name: 'Holdings', rows: held }, { name: 'Daily NAV', rows: nav }];
 }

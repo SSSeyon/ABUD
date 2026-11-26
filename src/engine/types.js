@@ -70,6 +70,7 @@ export function assertAllowedType(type) {
  * @property {import('./decimal.js').Num} mgmtFeeRate 0.0075 = 0.75% p.a.
  * @property {import('./decimal.js').Num} incentiveRate 0.10 = 10% of outperformance
  * @property {import('./decimal.js').Num} hurdleSpread 0.02 added to the 91-day true yield
+ * @property {'act365'|'quarterly'} [feeDayCount] management fee day count (default act365 in the engine)
  */
 
 export {};

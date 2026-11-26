@@ -23,10 +23,28 @@ no withdrawal-instruction verification or signatory register. Do not add them ba
 - Clause 8 incentive reading is the billing default; Clause 12 appears on internal outputs only.
 - Every recorded transaction counts (the engine's `approved` flag is always true from the app).
 
+## Decisions confirmed 26 Nov 2026
+- Management fee: annual rate ÷ 4 per quarter, spread over the calendar quarter's days (`feeDayCount: 'quarterly'`, the app
+  default via `appTerms`; the engine's own default stays `act365`). Matches the MCM income sheet.
+- Incentive: all three readings shown (Clause 8, Clause 12, worksheet); billing stays Clause 8 until Access confirms.
+  Worksheet reading = 10% × (quarter's naira income − shadow benchmark income); the shadow account takes every inflow and
+  withdrawal and compounds daily at the latest 91-day true yield + spread (`shadowSeries`, engine `shadow.js`).
+- Termination fee on whole months (part months rounded up); daily basis shown for reference only.
+- Minimum counterparty rating BBB. Valuation stays accrual; incentive NAV base stays average daily NAV; round once on totals.
+- Commencement 11 Aug 2021 (anniversary); mandate terms version effective 2021-08-11 added with the same rates.
+
 ## Layout
-- `index.html`, `styles.css` app shell. `src/app/main.js` hash router (#/dashboard, #/alerts, #/holdings, #/ladder, #/transactions, #/market, #/reports, #/close, #/history, #/settings).
+- Shell (like Wiwe Apartments): `#/home` (`views/home.js`) shows one card per section from `SECTIONS` in main.js; the
+  logo always leads Home. A section with several screens shows them as `section-tabs`. Desktop: sidebar of sections.
+  Phones (<= 860px): top bar (logo + title) and a bottom tab bar (Home, Dashboard, Alerts, Holdings); Home cards fill
+  the screen (`fitHome`). Money-flow Sankey: `sankey` in charts.js + `periodFlows` in flows.js (Reports, Management).
+- `index.html`, `styles.css` app shell. `src/app/main.js` hash router (#/home, #/dashboard, #/alerts, #/holdings, #/ladder, #/transactions, #/counterparties, #/market, #/reports, #/management, #/close, #/backtest, #/termination, #/history, #/settings).
 - Periods: `src/app/period.js` (QTD, YTD, any quarter, since inception, custom); one shared choice across Dashboard, Reports, History.
-- Alerts: `src/app/alerts.js` computes them live from the data and `settings/limits` (plan thresholds as defaults); in-app only, no email job yet. New deals over the tenor limit are refused.
+- Alerts: `src/app/alerts.js` computes them live from the data and the limits in force (`limitsFrom(data, date)`: latest
+  `limitSets/{effectiveFrom}` version, else `settings/limits`, else plan defaults). New deals over the tenor limit or with
+  a counterparty rated below `minRating` are refused (FGN bills exempt). Email: `digest.html` + `src/app/digest.js`
+  (`buildDigest`), rendered in headless Chrome by `tools/digest/send-digest.ps1` in `.github/workflows/daily-digest.yml`
+  (07:00 Lagos weekdays; SMTP secrets in GitHub; `src/app/rest.js` reads Firestore over REST so the page finishes loading).
 - Rollover: Holdings → Roll over writes maturity + new deal + its investment entry as one change (same terms, principal = proceeds by default).
 - Quarter close: `src/app/close.js` (benchmark = last 91-day NTB auction before the quarter; `computeClose` wraps the engine's
   `closePeriod`; `lockedBy`). Closing saves `quarterlyResults/{label}` with every figure frozen; while it exists `commit`
@@ -36,6 +54,20 @@ no withdrawal-instruction verification or signatory register. Do not add them ba
   liquidity rules; FGN paper exempt from concentration). Data comes from `tools/feeds/fetch-feeds.ps1`, run by
   `.github/workflows/market-feeds.yml` (weekdays, no secrets; CBN JSON APIs have no CORS so the browser can't call them)
   and only ever adds missing docs. Every feed also has a manual form on #/market.
+  News (`news`) and an auction calendar (`upcomingAuctions`: entered `auctionCalendar` dates, else projected from the
+  recent cycle) are on #/market too; reinvestment options below the minimum rating are rejected.
+- Back-test (#/backtest): `src/app/backtest.js` `runBacktest` reruns `computeClose` for every completed quarter (one NAV
+  series, `withReport: false`) against `invoices/{quarter}` (billed fees, loaded from `data/invoices-mcm.json`, built
+  by `tools/history/build-invoices.ps1` from the workbook's "MCM income" sheet).
+- Termination (#/termination): `computeTermination` in close.js; End-Date Portfolio = `holdingsOn` at the date.
+- Counterparties (#/counterparties): `src/app/counterparties.js` (rating scale and normalising, `ratingOn` = lowest of
+  each agency's latest, downgrades, exposure by counterparty and custodian, `ratingAlerts`, `dealRatingCheck`).
+- Management report (#/management): AUM, ARIP vs hurdle, fees under all readings vs billed, concentration, and
+  `breachesBetween` (src/app/mgmt.js: month-end checks against the limits then in force).
+- Excel: `downloadXlsx`/`excelButton` in ui.js (SheetJS 0.18.5 from jsDelivr, loaded on first use; `xMoney`, `xPct`,
+  `xDate` cells). On Holdings (with filters), Reports, Management report, Back-test, Termination, Counterparties.
+- Backups: Settings > Backup (download / restore, `src/app/backup.js`); `tools/backup/backup.ps1` in
+  `.github/workflows/nightly-backup.yml` keeps a 30-day artifact.
 - `src/app/firebase.js` Firestore init; `store.js` live onSnapshot state (+ 10 s "stalled" flag);
   `actions.js` every write (one batch); `portfolio.js` Firestore docs -> engine inputs; `ui.js` DOM helpers,
   formatting, modal forms; `views/` one file per screen. Forms live in modals so live re-renders don't wipe input.

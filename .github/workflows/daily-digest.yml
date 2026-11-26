@@ -1,0 +1,31 @@
+# Daily digest: alerts, maturities due this week, cash to deploy and the top three options, emailed at 07:00 Lagos
+# time on weekdays. The email is digest.html rendered in headless Chrome, so it uses the app's own logic.
+# Set these repository secrets (Settings > Secrets and variables > Actions) to send; without them the job only logs it:
+#   SMTP_URL (e.g. smtps://smtp.gmail.com:465), SMTP_USER, SMTP_PASS, DIGEST_TO (comma separated), DIGEST_FROM (optional)
+name: Daily digest
+
+on:
+  schedule:
+    - cron: '0 6 * * 1-5'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Serve the app locally
+        run: nohup python3 -m http.server 8000 >/dev/null 2>&1 &
+      - name: Render and send the digest
+        shell: pwsh
+        env:
+          SMTP_URL: ${{ secrets.SMTP_URL }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          DIGEST_TO: ${{ secrets.DIGEST_TO }}
+          DIGEST_FROM: ${{ secrets.DIGEST_FROM }}
+        run: ./tools/digest/send-digest.ps1 -Url http://localhost:8000/digest.html

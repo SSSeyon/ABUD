@@ -124,7 +124,49 @@ service cloud.firestore {
     }
     match /feedStatus/{id} {
       allow read: if true;
-      allow write: if id in ['cbn_ntb', 'cbn_omo', 'cbn_mpc', 'fmdq_cp', 'cbn_cpi'];
+      allow write: if id in ['cbn_ntb', 'cbn_omo', 'cbn_mpc', 'fmdq_cp', 'cbn_cpi', 'news'];
+    }
+    match /news/{id} {
+      allow read, delete: if true;
+      allow create, update: if isDate(request.resource.data.date)
+        && request.resource.data.title is string
+        && request.resource.data.url is string;
+    }
+    match /auctionCalendar/{id} {
+      allow read, delete: if true;
+      allow create, update: if isDate(request.resource.data.date)
+        && request.resource.data.kind in ['ntb', 'omo', 'fgn_bond'];
+    }
+
+    // Fees MBO billed each quarter (id = label), loaded from the MCM income sheet for the back-test.
+    match /invoices/{id} {
+      allow read, delete: if true;
+      allow create, update: if id.matches('^[0-9]{4}Q[1-4]$') && request.resource.data.quarter == id
+        && isMoney(request.resource.data.mgmtFee) && isMoney(request.resource.data.incentiveFee);
+    }
+
+    // Counterparty register and rating history.
+    match /counterparties/{id} {
+      allow read, delete: if true;
+      allow create, update: if request.resource.data.name is string && request.resource.data.name.size() > 0
+        && request.resource.data.kind in ['bank', 'issuer', 'fund_manager', 'custodian'];
+    }
+    match /ratings/{id} {
+      allow read, delete: if true;
+      allow create, update: if request.resource.data.counterpartyId is string
+        && request.resource.data.agency is string
+        && request.resource.data.rating is string
+        && isDate(request.resource.data.date);
+    }
+
+    // Dated versions of Settings > Limits (id = effective date), so past breaches use the limits then in force.
+    match /limitSets/{id} {
+      allow read: if true;
+      allow write: if isDate(id) && request.resource.data.effectiveFrom == id
+        && isMoney(request.resource.data.idleCash)
+        && isRate(request.resource.data.liquidityShare)
+        && isRate(request.resource.data.concentrationShare)
+        && request.resource.data.maxTenorDays.matches('^[0-9]+$');
     }
 
     // Everything else is closed.

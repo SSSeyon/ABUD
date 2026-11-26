@@ -10,6 +10,7 @@
     cbn_mpc  MPR and latest communique https://www.cbn.gov.ng/api/GetMPR_TOP, GetMpcTOP
     cbn_cpi  Headline inflation        https://www.cbn.gov.ng/api/GetInflationRatesTOP
     fmdq_cp  CP quotation notices      https://fmdqgroup.com/wp-json/wp/v2/posts
+    news     Money-market news         Nairametrics and BusinessDay RSS (filtered), CBN circulars (GetAllCirculars)
 
   Only adds documents that don't exist yet, so manual entries and edits made in the app are never overwritten.
   Writes only public market data; reads nothing from the portfolio. Rates are stored as fractions in strings.
@@ -18,6 +19,7 @@
 param(
   [string]$Since = '2021-01-01',     # oldest auction to keep
   [int]$CpDays = 120,                # how far back to pick up CP notices
+  [int]$NewsDays = 30,               # how far back to pick up news and CBN circulars
   [switch]$DryRun
 )
 $ErrorActionPreference = 'Stop'
@@ -181,10 +183,59 @@ function Sync-Cp {
   @{ added = $list.Count }
 }
 
+# ---------- Market news: Nairametrics and BusinessDay RSS (money-market topics only) and CBN circulars ----------
+$NewsTopics = '(?i)treasury bill|t-bill|\bNTB|\bOMO\b|\bMPC\b|monetary policy|\bMPR\b|commercial paper|\bFMDQ\b|inflation|money market|interbank|\byields?\b|\bbonds?\b|\bDMO\b|Access Holdings|Access Bank|CBN|Central Bank'
+function Get-NewsId([string]$Url) {
+  $sha = [Security.Cryptography.SHA1]::Create()
+  $hash = $sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($Url))
+  'news-' + (($hash[0..7] | ForEach-Object { $_.ToString('x2') }) -join '')
+}
+function Sync-News {
+  $existing = Get-ExistingIds 'news'
+  $after = (Get-Date).AddDays(-$NewsDays).ToString('yyyy-MM-dd')
+  $list = New-Object System.Collections.Generic.List[object]
+  $seen = New-Object 'System.Collections.Generic.HashSet[string]'
+  $add = {
+    param($date, $title, $url, $source)
+    if (-not $url -or $date -lt $after) { return }
+    $id = Get-NewsId $url
+    if ($existing.Contains($id) -or -not $seen.Add($id)) { return }
+    $list.Add(@{ id = $id; data = [ordered]@{ date = $date; title = $title.Trim(); url = $url; source = $source } })
+  }
+  $errors = @()
+  foreach ($feed in @(@{ url = 'https://nairametrics.com/feed/'; source = 'Nairametrics' }, @{ url = 'https://businessday.ng/feed/'; source = 'BusinessDay' })) {
+    try {
+      [xml]$rss = (Invoke-WebRequest -Uri $feed.url -Headers $Headers -UseBasicParsing -TimeoutSec 90).Content
+      foreach ($item in $rss.rss.channel.item) {
+        $title = [Net.WebUtility]::HtmlDecode([string]$item.title)
+        $cats = (@($item.category) | ForEach-Object { if ($_ -is [string]) { $_ } else { $_.InnerText } }) -join ' '
+        if ("$title $cats" -notmatch $NewsTopics) { continue }
+        $date = ([datetime]::Parse([string]$item.pubDate, $Inv)).ToUniversalTime().ToString('yyyy-MM-dd')
+        & $add $date $title ([string]$item.link) $feed.source
+      }
+    } catch { $errors += "$($feed.source): $($_.Exception.Message)" }
+  }
+  try {
+    $circulars = Get-Json 'https://www.cbn.gov.ng/api/GetAllCirculars'   # assign first: PS 5.1 returns the array unenumerated
+    foreach ($c in $circulars) {
+      if (-not $c.documentDate -or $c.documentDate -notmatch '^(\d{2})/(\d{2})/(\d{4})$') { continue }
+      $date = "$($Matches[3])-$($Matches[2])-$($Matches[1])"
+      $link = 'https://www.cbn.gov.ng' + ([string]$c.link -replace ' ', '%20')
+      & $add $date ('CBN circular: ' + ([string]$c.title).Trim()) $link 'CBN'
+    }
+  } catch { $errors += "CBN circulars: $($_.Exception.Message)" }
+  foreach ($e in $errors) { Write-Warning "news source skipped: $e" }
+  if ($errors.Count -eq 3) { throw ($errors -join '; ') }
+  if ($DryRun) { foreach ($d in $list) { Write-Host ("  {0}  {1}  |  {2}" -f $d.data.date, $d.data.source, $d.data.title) } }
+  Add-Docs 'news' $list
+  @{ added = $list.Count }
+}
+
 Invoke-Feed 'cbn_ntb' { Sync-Auctions 'ntb' 'GetAllSecuritiesNTB' }
 Invoke-Feed 'cbn_omo' { Sync-Auctions 'omo' 'GetAllSecuritiesOMO' }
 Invoke-Feed 'cbn_mpc' { Sync-Mpc }
 Invoke-Feed 'cbn_cpi' { Sync-Cpi }
 Invoke-Feed 'fmdq_cp' { Sync-Cp }
+Invoke-Feed 'news' { Sync-News }
 
 if ($script:Failed -gt 0) { Write-Warning "$($script:Failed) feed(s) failed; the app shows them on the Market screen."; exit 1 }

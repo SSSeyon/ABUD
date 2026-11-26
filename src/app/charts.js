@@ -134,3 +134,156 @@ export function allocationBar(parts) {
   );
   return h('div', { class: 'alloc' }, bar, legend);
 }
+
+/**
+ * Grouped bars: one group per category, one bar per series (at most 3), legend above, hover read-out per group.
+ * series: [{label, values: (number|null)[], cls: 'series-a'|'series-b'|'series-c'}]; format(value) for axis and tooltip.
+ * Bars grow from zero, so negative values hang below the baseline.
+ */
+export function groupedBars(categories, series, { format = fmtShort, height = 240, label = 'Chart' } = {}) {
+  const wrap = h('div', { class: 'chart', role: 'img', 'aria-label': `${label}: ${series.map((x) => x.label).join(', ')} by ${categories.length} periods` });
+  if (!categories.length) {
+    wrap.append(h('p', { class: 'muted empty' }, 'Nothing to chart.'));
+    return wrap;
+  }
+  wrap.append(h('div', { class: 'legend-row' }, series.map((x) => h('span', { class: 'legend-item' }, h('span', { class: `swatch ${x.cls}` }), x.label))));
+  const W = 800;
+  const H = height;
+  const pad = { l: 64, r: 12, t: 12, b: 26 };
+  const vals = series.flatMap((x) => x.values).filter((v) => v != null);
+  const ticks = niceTicks(Math.min(0, ...vals), Math.max(0, ...vals));
+  const yMin = ticks[0];
+  const yMax = ticks.at(-1);
+  const y = (v) => pad.t + (1 - (v - yMin) / (yMax - yMin)) * (H - pad.t - pad.b);
+  const groupW = (W - pad.l - pad.r) / categories.length;
+  const gap = 2;
+  const barW = Math.max(2, Math.min(18, (groupW * 0.8 - gap * (series.length - 1)) / series.length));
+  const svg = s('svg', { viewBox: `0 0 ${W} ${H}`, class: 'chart-svg' });
+  for (const t of ticks) {
+    svg.append(s('line', { x1: pad.l, x2: W - pad.r, y1: y(t), y2: y(t), class: 'grid' }));
+    svg.append(s('text', { x: pad.l - 8, y: y(t) + 4, class: 'axis', 'text-anchor': 'end' }, format(t)));
+  }
+  const every = Math.ceil(categories.length / 8);
+  const tip = h('div', { class: 'chart-tip', hidden: true });
+  categories.forEach((cat, i) => {
+    const gx = pad.l + i * groupW;
+    const inner = series.length * barW + (series.length - 1) * gap;
+    const start = gx + (groupW - inner) / 2;
+    series.forEach((x, k) => {
+      const v = x.values[i];
+      if (v == null) return;
+      const y0 = y(0);
+      const y1 = y(v);
+      svg.append(s('rect', { x: start + k * (barW + gap), y: Math.min(y0, y1), width: barW, height: Math.max(1, Math.abs(y1 - y0)), rx: Math.min(3, barW / 2), class: `bar ${x.cls}` }));
+    });
+    if (i % every === 0) svg.append(s('text', { x: gx + groupW / 2, y: H - 6, class: 'axis', 'text-anchor': 'middle' }, cat));
+    const hit = s('rect', { x: gx, y: pad.t, width: groupW, height: H - pad.t - pad.b, fill: 'transparent' });
+    hit.addEventListener('pointerenter', () => {
+      const box = svg.getBoundingClientRect();
+      tip.replaceChildren(h('div', { class: 'tip-date' }, cat), ...series.map((x) => h('div', null, h('span', { class: `swatch ${x.cls}` }), ` ${x.label} `, h('strong', null, x.values[i] == null ? '—' : format(x.values[i])))));
+      tip.hidden = false;
+      tip.style.left = `${Math.min(Math.max(((gx + groupW / 2) / W) * box.width, 90), box.width - 90)}px`;
+      tip.style.top = `${box.height * 0.45}px`;
+    });
+    hit.addEventListener('pointerleave', () => { tip.hidden = true; });
+    svg.append(hit);
+  });
+  svg.append(s('line', { x1: pad.l, x2: W - pad.r, y1: y(0), y2: y(0), class: 'baseline' }));
+  wrap.append(svg, tip);
+  return wrap;
+}
+
+/**
+ * Two-stage Sankey: sources on the left flow into one middle node, which flows out to uses on the right.
+ * left/right: [{label, value (number or Decimal), color (CSS colour or var)}]; zero values are dropped.
+ * Band width is proportional to value. Redraws at its real width (ResizeObserver) so labels stay readable on phones;
+ * labels sit over the bands with a halo. Hover a band or node for its value and share. A figures table follows.
+ */
+export function sankey(left, right, { middle = 'Portfolio', height = 360, format = fmtShort, label = 'Money flows' } = {}) {
+  const L = left.map((x) => ({ ...x, v: Number(x.value) })).filter((x) => x.v > 0);
+  const R = right.map((x) => ({ ...x, v: Number(x.value) })).filter((x) => x.v > 0);
+  const total = Math.max(L.reduce((s, x) => s + x.v, 0), R.reduce((s, x) => s + x.v, 0));
+  const wrap = h('div', { class: 'chart sankey', role: 'img', 'aria-label': `${label}: ${L.map((x) => `${x.label} ${format(x.v)}`).join(', ')} into ${middle}; out to ${R.map((x) => `${x.label} ${format(x.v)}`).join(', ')}` });
+  if (!total) { wrap.append(h('p', { class: 'muted empty' }, 'No flows in this period.')); return wrap; }
+  const tip = h('div', { class: 'chart-tip', hidden: true });
+  const share = (v) => `${((v / total) * 100).toFixed(1)}%`;
+
+  const draw = (W) => {
+    const narrow = W < 560;
+    const H = narrow ? Math.max(300, height - 40) : height;
+    const pad = { t: 22, b: 8 };
+    const nodeW = 10;
+    const gap = 6;
+    const col = { l: 0, m: Math.round(W / 2 - nodeW / 2), r: W - nodeW };
+    const stack = (list) => {
+      const avail = H - pad.t - pad.b - gap * Math.max(0, list.length - 1);
+      let y = pad.t;
+      return list.map((x) => { const hgt = Math.max(2, (x.v / total) * avail); const n = { ...x, y, h: hgt }; y += hgt + gap; return n; });
+    };
+    const ln = stack(L);
+    const rn = stack(R);
+    const mid = { y: pad.t, h: H - pad.t - pad.b };
+    const svg = s('svg', { viewBox: `0 0 ${W} ${H}`, width: W, height: H, class: 'chart-svg' });
+    const band = (x0, y0, h0, x1, y1, h1, color, text) => {
+      const c = (x0 + x1) / 2;
+      const d = `M${x0},${y0}C${c},${y0} ${c},${y1} ${x1},${y1}L${x1},${y1 + h1}C${c},${y1 + h1} ${c},${y0 + h0} ${x0},${y0 + h0}Z`;
+      const p = s('path', { d, class: 'sk-band', fill: color });
+      p.addEventListener('pointermove', (e) => showTip(e, text));
+      p.addEventListener('pointerleave', () => { tip.hidden = true; });
+      svg.append(p);
+    };
+    const showTip = (e, text) => {
+      const box = wrap.getBoundingClientRect();
+      tip.replaceChildren(...text.map((t, i) => h('div', { class: i ? null : 'tip-date' }, t)));
+      tip.hidden = false;
+      tip.style.left = `${Math.min(Math.max(e.clientX - box.left, 90), box.width - 90)}px`;
+      tip.style.top = `${e.clientY - box.top}px`;
+    };
+    // Left → middle: each source fills its slice of the middle node, top to bottom.
+    let my = mid.y;
+    for (const n of ln) {
+      const mh = (n.v / total) * mid.h;
+      band(col.l + nodeW, n.y, n.h, col.m, my, mh, n.color, [n.label, `${format(n.v)} · ${share(n.v)} of ${middle.toLowerCase()}`]);
+      my += mh;
+    }
+    my = mid.y;
+    for (const n of rn) {
+      const mh = (n.v / total) * mid.h;
+      band(col.m + nodeW, my, mh, col.r, n.y, n.h, n.color, [n.label, `${format(n.v)} · ${share(n.v)}`]);
+      my += mh;
+    }
+    const node = (x, n, color) => svg.append(s('rect', { x, y: n.y, width: nodeW, height: n.h, rx: 2, class: 'sk-node', fill: color }));
+    ln.forEach((n) => node(col.l, n, n.color));
+    rn.forEach((n) => node(col.r, n, n.color));
+    node(col.m, mid, 'var(--fg)');
+    // Labels: over the bands, next to their node; skipped when the node is too thin (the table has every figure).
+    const text = (x, y, anchor, a, b) => {
+      const t = s('text', { x, y, 'text-anchor': anchor, class: 'sk-label' }, s('tspan', { class: 'sk-name' }, a), s('tspan', { class: 'sk-val', dx: 6 }, b));
+      svg.append(t);
+    };
+    const minH = narrow ? 15 : 13;
+    const name = (n) => (narrow && n.short ? n.short : n.label);
+    for (const n of ln) if (n.h >= minH) text(col.l + nodeW + 6, n.y + n.h / 2 + 4, "start", name(n), format(n.v));
+    for (const n of rn) if (n.h >= minH) text(col.r - 6, n.y + n.h / 2 + 4, "end", name(n), format(n.v));
+    svg.append(s('text', { x: col.m + nodeW / 2, y: 14, 'text-anchor': 'middle', class: 'sk-label sk-mid' }, `${middle} ${format(total)}`));
+    return svg;
+  };
+
+  const holder = h('div', { class: 'sk-holder' });
+  let lastW = 0;
+  const paint = () => {
+    const W = Math.round(holder.clientWidth || 760);
+    if (Math.abs(W - lastW) < 4) return;
+    lastW = W;
+    holder.replaceChildren(draw(W));
+  };
+  holder.append(draw(760));
+  if (typeof ResizeObserver !== 'undefined') new ResizeObserver(paint).observe(holder);
+  const rows = [...L.map((x) => ['In', x]), ...R.map((x) => ['Out', x])];
+  const figures = h('details', { class: 'sk-figures' }, h('summary', null, 'Figures'),
+    h('table', null, h('tbody', null, rows.map(([dir, x]) => h('tr', null,
+      h('td', null, h('span', { class: 'swatch', style: `background:${x.color}` }), ` ${dir}: ${x.label}`),
+      h('td', { class: 'num' }, fmtNaira(dec(x.value))), h('td', { class: 'num muted' }, share(x.v)))))));
+  wrap.append(holder, tip, figures);
+  return wrap;
+}

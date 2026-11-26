@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ABUD digest</title>
+<style>body { background: #fff; margin: 16px; }</style>
+</head>
+<body>
+<!-- Rendered by headless Chrome in the daily-digest job (tools/digest/send-digest.ps1), which reads #subject,
+     #mail and #text once <body data-ready="1">. Open it in a browser to preview the email.
+     ?date=YYYY-MM-DD sets the day; ?app=URL sets the link back to the app. -->
+<pre id="subject" hidden></pre>
+<div id="mail">Loading…</div>
+<pre id="text" hidden></pre>
+<script type="module">
+import { fetchAll } from './src/app/rest.js';
+import { buildDigest } from './src/app/digest.js';
+
+const params = new URLSearchParams(location.search);
+const today = params.get('date') ?? new Date(Date.now() + 3600e3).toISOString().slice(0, 10); // Lagos is UTC+1
+const appUrl = params.get('app') ?? 'https://ssseyon.github.io/ABUD/';
+try {
+  const data = await fetchAll(['transactions', 'instruments', 'fundPrices', 'funds', 'mandateTerms', 'settings', 'limitSets',
+    'quarterlyResults', 'auctions', 'mpc', 'cpQuotes', 'feedStatus', 'counterparties', 'ratings']);
+  if (!data.transactions) throw new Error('Could not read transactions');
+  const d = buildDigest(data, today, appUrl);
+  document.getElementById('subject').textContent = d.subject;
+  document.getElementById('mail').innerHTML = d.html;
+  document.getElementById('text').textContent = d.text;
+  document.body.dataset.ready = '1';
+} catch (err) {
+  document.getElementById('mail').textContent = `Digest failed: ${err.message}`;
+  document.body.dataset.ready = 'error';
+}
+</script>
+</body>
+</html>

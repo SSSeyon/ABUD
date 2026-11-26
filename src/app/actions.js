@@ -4,6 +4,7 @@ import { db, collection, doc, writeBatch, serverTimestamp } from './firebase.js'
 import { historyDocs } from './history.js';
 import { state } from './store.js';
 import { closedQuarters, lockedBy } from './close.js';
+import { restoreDocs } from './backup.js';
 
 /** Drop empty optional fields so documents only carry what was entered. */
 function clean(obj) {
@@ -166,7 +167,7 @@ export async function reclassifyInstruments(ids, type) {
 /** Create (id null) or replace a settings document. */
 export async function saveDoc(coll, id, data) {
   const docId = id ?? newId(coll);
-  await commit(`${id ? 'Edited' : 'Added'} ${{ mandateTerms: 'mandate terms', funds: 'fund', settings: 'limits', auctions: 'auction result', mpc: 'MPC decision', cpQuotes: 'CP quotation' }[coll] ?? coll}`, [{ coll, id: docId, data: clean(data), stamp: false }]);
+  await commit(`${id ? 'Edited' : 'Added'} ${{ mandateTerms: 'mandate terms', funds: 'fund', settings: 'limits', auctions: 'auction result', mpc: 'MPC decision', cpQuotes: 'CP quotation', invoices: 'billed fees', counterparties: 'counterparty', ratings: 'rating', limitSets: 'limits', auctionCalendar: 'auction date' }[coll] ?? coll}`, [{ coll, id: docId, data: clean(data), stamp: false }]);
   return docId;
 }
 
@@ -193,4 +194,41 @@ export async function markBilled(label, billedOn) {
 /** Removes the close record, unlocking the quarter. The old figures stay in the change history. */
 export async function reopenQuarter(label) {
   await commit(`Reopened ${label}`, [{ coll: 'quarterlyResults', id: label, data: null }], { kind: 'delete' });
+}
+
+// ---------- back-test ----------
+
+/** Loads the billed fees (data/invoices-mcm.json) as one change, so it can be undone from Change history. */
+export async function importInvoices(list) {
+  if (!Array.isArray(list) || !list.length) throw new Error('The file holds no quarters.');
+  const changes = list.map((i) => ({ coll: 'invoices', id: i.quarter, data: clean({ ...i, id: undefined }), stamp: false }));
+  await commit(`Loaded billed fees for ${list.length} quarters (${list[0].quarter} to ${list.at(-1).quarter})`, changes);
+}
+
+// ---------- limits ----------
+
+/** Saves the limits as the current set and as a dated version (limitSets/{effectiveFrom}), in one change. */
+export async function saveLimits(limits, effectiveFrom) {
+  await commit(`Limits effective ${effectiveFrom}`, [
+    { coll: 'settings', id: 'limits', data: clean(limits), stamp: false },
+    { coll: 'limitSets', id: effectiveFrom, data: clean({ ...limits, effectiveFrom }), stamp: false },
+  ]);
+}
+
+// ---------- backup ----------
+
+/** Writes a backup file's documents back in batches of 400 (not in the change history; ids are fixed, so rerunnable). */
+export async function restoreBackup(file, onProgress) {
+  const docs = restoreDocs(file);
+  for (let i = 0; i < docs.length; i += 400) {
+    const batch = writeBatch(db);
+    for (const d of docs.slice(i, i + 400)) batch.set(doc(db, d.coll, d.id), d.data);
+    await batch.commit();
+    onProgress?.(Math.min(i + 400, docs.length), docs.length);
+  }
+}
+
+/** Adds several new documents to a collection as one change (e.g. counterparties found in the holdings). */
+export async function saveDocs(coll, list, summary) {
+  await commit(summary, list.map((data) => ({ coll, id: newId(coll), data: clean(data), stamp: false })));
 }

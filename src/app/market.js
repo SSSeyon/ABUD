@@ -1,6 +1,7 @@
 // Market data and the opportunity engine: the latest auction, MPC and CP data, the events worth flagging, and a
 // ranked shortlist of where idle cash could go. Fixed rules from the build plan; the team decides.
 // Pure functions over the loaded data, so they are testable. No portfolio data leaves the app.
+import { belowMinimum, findCounterparty, normRating, ratingOn } from './counterparties.js';
 import { addDays, daysBetween, dec, DAYS_IN_YEAR, ONE, ZERO } from '../engine/index.js';
 import { counterpartyOf } from './alerts.js';
 import { auctionYield, ntb91 } from './close.js';
@@ -131,6 +132,12 @@ export function rankOpportunities(data, today, limits) {
   for (const c of candidates) {
     const notes = [];
     if (c.tenorDays > Number(limits.maxTenorDays)) { rejected.push({ ...c, reason: `Tenor ${c.tenorDays} days is over the ${limits.maxTenorDays}-day limit` }); continue; }
+    if (!c.sovereign && limits.minRating) {
+      const cp = findCounterparty(data, c.counterparty);
+      const r = cp ? ratingOn(data, cp.id, today)?.rating : normRating(c.rating);
+      if (r && belowMinimum(r, limits.minRating)) { rejected.push({ ...c, reason: `${c.counterparty} is rated ${r}, below the ${limits.minRating} minimum` }); continue; }
+      if (!r) notes.push('unrated');
+    }
     let amount = cashToDeploy;
     let headroom = null;
     if (!c.sovereign) {
@@ -181,6 +188,7 @@ export const FEEDS = [
   { key: 'cbn_mpc', label: 'MPR and MPC (CBN)', staleDays: 4 },
   { key: 'fmdq_cp', label: 'CP quotations (FMDQ)', staleDays: 4 },
   { key: 'cbn_cpi', label: 'Headline inflation (CBN)', staleDays: 10 },
+  { key: 'news', label: 'News and CBN circulars', staleDays: 4 },
 ];
 
 /** Each feed with its status: ok, stale, failing or never run. */
@@ -195,4 +203,32 @@ export function feedHealth(data, today) {
     else status = daysBetween(lastOk, today) > f.staleDays ? 'stale' : 'ok';
     return { ...f, doc: d ?? null, lastOk, status };
   });
+}
+
+/**
+ * Upcoming auctions in the next `days` days: dates entered on the Market screen (auctionCalendar), plus a
+ * projection for NTB and OMO from the usual gap between recent auctions (14 days for NTBs) when nothing is entered.
+ * @returns {{date: string, kind: string, label: string, projected: boolean, doc?: object}[]}
+ */
+export function upcomingAuctions(data, today, days = 45) {
+  const horizon = addDays(today, days);
+  const entered = (data.auctionCalendar ?? []).filter((c) => c.date >= today && c.date <= horizon)
+    .map((c) => ({ date: c.date, kind: c.kind, label: c.notes || c.tenors || '', projected: false, doc: c }));
+  const out = [...entered];
+  for (const kind of ['ntb', 'omo']) {
+    if (entered.some((c) => c.kind === kind)) continue;
+    const dates = [...new Set((data.auctions ?? []).filter((a) => a.kind === kind).map((a) => a.date))].sort().slice(-7);
+    if (dates.length < 3) continue;
+    const gaps = dates.slice(1).map((d, i) => daysBetween(dates[i], d)).sort((a, b) => a - b);
+    const gap = Math.max(7, gaps[Math.floor(gaps.length / 2)]);
+    let next = addDays(dates.at(-1), gap);
+    while (next < today) next = addDays(next, gap);
+    for (; next <= horizon; next = addDays(next, gap)) out.push({ date: next, kind, label: `Projected from the usual ${gap}-day cycle`, projected: true });
+  }
+  return out.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+}
+
+/** News items from the feed, newest first. */
+export function latestNews(data, limit = 12) {
+  return [...(data.news ?? [])].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)).slice(0, limit);
 }

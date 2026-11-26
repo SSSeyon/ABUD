@@ -1,5 +1,5 @@
 import { BusinessCalendar, daysBetween, dec, managementFeeForPeriod, periodRates, quarterOf } from '../../engine/index.js';
-import { auctionYield, benchmarkFor } from '../close.js';
+import { appTerms, auctionYield, benchmarkFor } from '../close.js';
 import { rankOpportunities } from '../market.js';
 import { computeAlerts, limitsFrom } from '../alerts.js';
 import { allocationBar, lineChart } from '../charts.js';
@@ -44,10 +44,10 @@ export function dashboardView(rerender) {
   const endRow = r.rows.at(-1);
   const isToday = period.end === today;
   const at = isToday ? 'today' : `at ${fmtDate(period.end)}`;
-  const terms = mandateOn(data, period.end);
+  const terms = appTerms(mandateOn(data, period.end));
   let fee = null;
   try {
-    fee = terms ? managementFeeForPeriod(r.allRows, period.start, period.end, terms.mgmtFeeRate, new BusinessCalendar()) : null;
+    fee = terms ? managementFeeForPeriod(r.allRows, period.start, period.end, terms.mgmtFeeRate, new BusinessCalendar(), terms.feeDayCount) : null;
   } catch { fee = null; }
   const tone = (x) => (x.isNegative() ? 'down' : 'up');
   // Hurdle for the same days, when the period sits inside one quarter (that quarter's benchmark).

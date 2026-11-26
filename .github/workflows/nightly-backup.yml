@@ -1,0 +1,26 @@
+# Nightly backup: every Firestore collection as one JSON file (the same format as Settings > Backup, so it can be
+# restored there), kept as a workflow artifact for 30 days. Artifacts are visible to anyone who can see the repository.
+name: Nightly backup
+
+on:
+  schedule:
+    - cron: '30 23 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Export Firestore
+        shell: pwsh
+        run: ./tools/backup/backup.ps1 -Out backup
+      - uses: actions/upload-artifact@v4
+        with:
+          name: abud-backup-${{ github.run_id }}
+          path: backup/
+          retention-days: 30

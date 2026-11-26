@@ -23,14 +23,15 @@ describe('quarter close', () => {
     expect(completedQuarters('2026-02-10', '2026-11-25').map((q) => q.label)).toEqual(['2026Q3', '2026Q2', '2026Q1']);
   });
 
-  it('flat N10bn for 2026Q3: fee N18,904,109.59, no return, no incentive', () => {
+  it('flat N10bn for 2026Q3: a quarter of 0.75% = N18,750,000 (Actual/365 gives N18,904,109.59)', () => {
+    expect(computeClose(flat, '2026Q3', { feeDayCount: 'act365' }).result.mgmtFee.toFixed(2)).toBe('18904109.59');
     const c = computeClose(flat, '2026Q3');
     expect(c.error).toBe(undefined);
-    expect(c.result.mgmtFee.toFixed(2)).toBe('18904109.59');
+    expect(c.result.mgmtFee.toFixed(2)).toBe('18750000.00');
     expect(c.result.arip.toFixed(6)).toBe('0.000000');
     expect(c.result.hurdleMet).toBe(false);
     const rec = closeRecord(c);
-    expect(rec).toMatchObject({ quarter: '2026Q3', periodStart: '2026-07-01', periodEnd: '2026-09-30', days: '92', mgmtFee: '18904109.59', incentiveClause8: '0.00', status: 'closed' });
+    expect(rec).toMatchObject({ quarter: '2026Q3', periodStart: '2026-07-01', periodEnd: '2026-09-30', days: '92', mgmtFee: '18750000.00', incentiveClause8: '0.00', incentiveWorksheet: '0.00', status: 'closed' });
     // True yield from the 18% stop: 0.18 / (1 - 0.18 x 91/365)
     expect(rec.benchmark.trueYield.slice(0, 8)).toBe('0.188457');
   });
